@@ -1,0 +1,117 @@
+@import "tailwindcss";
+
+/* AC Tel Örgü renkleri (logodan alındı) */
+@theme {
+  --color-ac-kirmizi: #d82628;
+  --color-ac-kirmizi-acik: #f04446;
+  --color-ac-lacivert: #003a8c;
+  --color-ac-mavi: #0a84c6;
+  --color-ac-gece: #06142e;
+  --color-ac-gece-2: #0b2350;
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  --zemin: #06142e;
+  --yuzey: rgb(255 255 255 / 0.05);
+  --yuzey-2: rgb(255 255 255 / 0.09);
+  --cizgi: rgb(255 255 255 / 0.1);
+  --metin: #eef3fb;
+  --metin-2: #9fb2d0;
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: radial-gradient(1200px 800px at 15% -10%, #12306a 0%, transparent 60%),
+    radial-gradient(900px 700px at 110% 110%, #3a0d1a 0%, transparent 55%),
+    linear-gradient(160deg, #06142e 0%, #0b2350 100%);
+  background-attachment: fixed;
+  color: var(--metin);
+  min-height: 100%;
+}
+
+/* Açık tema: aynı sınıflar, açık zemin. Yarı saydam beyaz katmanlar (bg-white/10, ring-white/10…)
+   açıkta lacivert tonlu olur; text-white koyu metne döner. Gece renkli paneller açık yüzey olur. */
+:root[data-tema="acik"] {
+  --color-white: #0b2350;
+  --color-ac-gece: #f5f8fd;
+  --color-ac-gece-2: #e6edf7;
+  --color-ac-kirmizi-acik: #d82628;
+  --color-ac-mavi: #0670a8;
+  --zemin: #eef3fa;
+  --yuzey: rgb(255 255 255 / 0.72);
+  --yuzey-2: rgb(255 255 255 / 0.95);
+  --cizgi: rgb(11 35 80 / 0.12);
+  --metin: #0b1b38;
+  --metin-2: #52627f;
+  color-scheme: light;
+}
+:root[data-tema="acik"],
+:root[data-tema="acik"] body {
+  background: radial-gradient(1200px 800px at 15% -10%, #d6e6fb 0%, transparent 60%),
+    radial-gradient(900px 700px at 110% 110%, #fbe1e3 0%, transparent 55%),
+    linear-gradient(160deg, #f4f7fc 0%, #e7eef8 100%);
+  background-attachment: fixed;
+}
+:root[data-tema="acik"] .cam {
+  box-shadow: 0 1px 2px rgb(11 35 80 / 0.06), 0 6px 20px -12px rgb(11 35 80 / 0.25);
+}
+/* Renkli dolgulu düğmelerde yazı her temada beyaz kalsın */
+:root[data-tema="acik"] :is(.bg-ac-kirmizi, .bg-ac-lacivert, .bg-\[\#1fa855\], .bg-\[\#081a38\]) {
+  --color-white: #fff;
+  color: #fff;
+}
+/* Açık zeminde okunmayan açık vurgu yazıları koyulaşsın */
+:root[data-tema="acik"] .text-amber-200 { color: #a15c00; }
+:root[data-tema="acik"] :is(.text-sky-100, .text-sky-200) { color: #0b5e94; }
+:root[data-tema="acik"] .text-emerald-300 { color: #0d7a4a; }
+:root[data-tema="acik"] :is(.text-red-200, .text-red-300) { color: #b3151a; }
+:root[data-tema="acik"] .ince-kaydirma::-webkit-scrollbar-thumb {
+  background: rgb(11 35 80 / 0.18);
+}
+
+.cam {
+  background: var(--yuzey);
+  border: 1px solid var(--cizgi);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.secili {
+  border-color: var(--color-ac-kirmizi) !important;
+  background: linear-gradient(180deg, rgb(216 38 40 / 0.18), rgb(216 38 40 / 0.06)) !important;
+  box-shadow: 0 0 0 1px var(--color-ac-kirmizi), 0 8px 30px -8px rgb(216 38 40 / 0.6);
+}
+
+/* Sayı girişlerindeki ok tuşlarını gizle (kendi +/- butonlarımız var) */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.ince-kaydirma::-webkit-scrollbar {
+  width: 8px;
+}
+.ince-kaydirma::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 0.12);
+  border-radius: 8px;
+}
+
+@keyframes yukari {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.yukari {
+  animation: yukari 0.35s ease both;
+}
