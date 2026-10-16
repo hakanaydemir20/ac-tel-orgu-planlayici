@@ -136,6 +136,7 @@ export interface FirmaBilgisi {
 export interface Ayarlar {
   firma: FirmaBilgisi;
   gecerlilikGun: number; // teklifin geçerlilik süresi
+  satiscilar: string[]; // teklifi verebilecek firma satışçıları
   /** Tel tipi → yükseklik ("1.5") → ₺ / metre çit */
   telMetre: Record<Exclude<TelTipiId, "dikenli">, Record<string, number>>;
   /** Kafes tel ₺ / metretül: yükseklik ("1.5") → göz aralığı ("50") → tel kalınlığı ("2.5") */
@@ -195,6 +196,7 @@ const KAFES_TEMEL = { "1": 95, "1.2": 115, "1.5": 145, "1.75": 165, "2": 190 };
 export const VARSAYILAN_AYARLAR: Ayarlar = {
   firma: { ad: "AC Tel Örgü", telefon: "", adres: "", eposta: "", web: "" },
   gecerlilikGun: 15,
+  satiscilar: ["Kaan", "Cengiz", "Ahmet", "Atilla"],
   telMetre: {
     kafes: KAFES_TEMEL, // eski kayıtlar için; kafes artık kafesMetre tablosundan fiyatlanır
     panel: { "1.03": 220, "1.23": 260, "1.53": 320, "1.73": 365, "2.03": 425 },

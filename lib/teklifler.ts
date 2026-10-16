@@ -11,6 +11,7 @@ export interface KayitliTeklif {
   no: string;
   tarih: string; // ISO, son kayıt
   musteri: string;
+  satisci?: string;
   toplam: number; // KDV dahil
   telUzunluk: number;
   tasarim: Tasarim; // tasarim.fiyatlar: verildiği tarihteki fiyatlar

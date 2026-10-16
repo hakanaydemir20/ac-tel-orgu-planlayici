@@ -45,10 +45,12 @@ export function Tasarimci() {
   const [kaydedildi, setKaydedildi] = useState(false);
 
   // Müşteri adı yoksa önce onu sorar; varsa doğrudan arşive kaydeder
-  const kaydet = (m?: Musteri) => {
-    if (!m && !tasarim.musteri.ad.trim()) return setSor(true);
-    if (m) guncelle((x) => void (x.musteri = m));
-    teklifiKaydet(m ? { ...tasarim, musteri: m } : tasarim, sonuc, ayarlar);
+  // Müşteri adı ya da satışçı eksikse önce onları sorar
+  const kaydet = (m?: Musteri, satisci?: string) => {
+    if (!m && (!tasarim.musteri.ad.trim() || !tasarim.satisci)) return setSor(true);
+    const yeni = m ? { ...tasarim, musteri: m, satisci: satisci ?? tasarim.satisci } : tasarim;
+    if (m) guncelle((x) => void ((x.musteri = yeni.musteri), (x.satisci = yeni.satisci)));
+    teklifiKaydet(yeni, sonuc, ayarlar);
     setSor(false);
     setKaydedildi(true);
   };
@@ -192,7 +194,7 @@ export function Tasarimci() {
       {liste && <TeklifListesi kapat={() => setListe(false)} />}
       {yeni && <YeniTeklif kapat={() => setYeni(false)} />}
       {sihirbaz && <SoruCevap kapat={() => setSihirbaz(false)} />}
-      {sor && <MusteriSor musteri={tasarim.musteri} kaydet={kaydet} kapat={() => setSor(false)} />}
+      {sor && <MusteriSor musteri={tasarim.musteri} satisci={tasarim.satisci} kaydet={kaydet} kapat={() => setSor(false)} />}
     </div>
   );
 }

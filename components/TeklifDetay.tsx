@@ -5,6 +5,7 @@ import { useEtkinAyarlar } from "@/lib/ayarlar";
 import { useTasarim } from "@/lib/store";
 import type { Tasarim } from "@/lib/tasarim";
 import { MusteriFormu } from "./MusteriFormu";
+import { SatisciSec } from "./SatisciSec";
 import { waNumarasi } from "@/lib/telefon";
 import { whatsappMetni } from "./pdf";
 import { teklifiKaydet, type useTeklifCikti } from "./TeklifYazdir";
@@ -166,6 +167,7 @@ export function TeklifDetay({
               </button>
             </div>
 
+            <SatisciSec deger={t.satisci} degistir={(v) => guncelle((x) => void (x.satisci = v))} />
             <section className="space-y-3">
               <div className="text-sm font-extrabold uppercase tracking-widest text-ac-mavi">Müşteri</div>
               <MusteriFormu musteri={t.musteri} degistir={(m) => guncelle((x) => void (x.musteri = m))} />

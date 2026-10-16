@@ -28,6 +28,7 @@ export function teklifiKaydetSaf(t: Tasarim, s: Sonuc, ay: Ayarlar, tarih = new 
     no,
     tarih: tarih.toISOString(),
     musteri: t.musteri.ad.trim(),
+    satisci: t.satisci,
     toplam: s.toplam,
     telUzunluk: s.telUzunluk,
     tasarim: { ...t, teklifNo: no, fiyatlar },

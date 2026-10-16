@@ -3,12 +3,15 @@ import { useEffect, useState } from "react";
 import { useTasarim } from "@/lib/store";
 import { bosMusteri } from "@/lib/tasarim";
 import { MusteriFormu } from "./MusteriFormu";
+import { SatisciSec } from "./SatisciSec";
 
 /** "+ Yeni teklif": teklif verilecek kişi/firmayı alır, ekranı temizleyip bu bilgilerle başlatır. */
 export function YeniTeklif({ kapat }: { kapat: () => void }) {
   const sifirla = useTasarim((s) => s.sifirla);
   const kayitli = useTasarim((s) => !!s.tasarim.teklifNo);
   const [m, setM] = useState(bosMusteri);
+  const [satisci, setSatisci] = useState(() => useTasarim.getState().tasarim.satisci);
+  const guncelle = useTasarim((s) => s.guncelle);
 
   useEffect(() => {
     const esc = (e: KeyboardEvent) => e.key === "Escape" && kapat();
@@ -18,6 +21,7 @@ export function YeniTeklif({ kapat }: { kapat: () => void }) {
 
   const baslat = () => {
     sifirla(m);
+    guncelle((x) => void (x.satisci = satisci));
     kapat();
   };
 
@@ -46,6 +50,7 @@ export function YeniTeklif({ kapat }: { kapat: () => void }) {
             </button>
           </header>
 
+          <SatisciSec deger={satisci} degistir={setSatisci} />
           <MusteriFormu musteri={m} degistir={setM} ilkAlanaOdak />
 
           <p className="text-xs text-[var(--metin-2)]">

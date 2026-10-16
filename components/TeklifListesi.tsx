@@ -19,7 +19,7 @@ export function TeklifListesi({ kapat }: { kapat: () => void }) {
 
   const bulunan = useMemo(() => {
     const q = ara.trim().toLocaleLowerCase("tr");
-    return q ? liste.filter((k) => `${k.musteri} ${k.no}`.toLocaleLowerCase("tr").includes(q)) : liste;
+    return q ? liste.filter((k) => `${k.musteri} ${k.no} ${k.satisci ?? ""}`.toLocaleLowerCase("tr").includes(q)) : liste;
   }, [liste, ara]);
 
   return (
@@ -65,7 +65,7 @@ export function TeklifListesi({ kapat }: { kapat: () => void }) {
           {bulunan.map((k) => (
             <div key={k.no} className={`cam flex items-center gap-3 rounded-xl p-3 ${k.no === acikNo ? "ring-1 ring-ac-kirmizi" : ""}`}>
               <div className="min-w-0 flex-1">
-                <div className="truncate font-bold">{k.musteri || "İsimsiz müşteri"}</div>
+                <div className="truncate font-bold">{k.musteri || "İsimsiz müşteri"}{k.satisci && <span className="font-normal text-[var(--metin-2)]"> · {k.satisci}</span>}</div>
                 <div className="text-xs text-[var(--metin-2)]">
                   {k.no} · {new Date(k.tarih).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" })} · {sayi(k.telUzunluk)} m
                   {k.tasarim.fiyatlar && <> · 🔒 {new Date(k.tasarim.fiyatlar.tarih).toLocaleDateString("tr-TR")} fiyatları</>}

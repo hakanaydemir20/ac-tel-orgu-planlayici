@@ -435,6 +435,20 @@ export function AyarPaneli({ kapat }: { kapat: () => void }) {
                 <Metin etiket="Web sitesi" deger={a.firma.web} onChange={(v) => d((x) => void (x.firma.web = v))} />
                 <Metin etiket="Adres" deger={a.firma.adres} onChange={(v) => d((x) => void (x.firma.adres = v))} />
               </div>
+              <div className="cam space-y-2 rounded-2xl p-4 md:p-5">
+                <div className="font-bold">Satışçılar</div>
+                <div className="text-xs text-[var(--metin-2)]">Teklifte “Teklifi veren” menüsünde çıkar. Her satıra bir isim.</div>
+                <textarea
+                  aria-label="Satışçılar, her satıra bir isim"
+                  rows={Math.max(3, a.satiscilar.length + 1)}
+                  defaultValue={a.satiscilar.join("\n")}
+                  onBlur={(e) => {
+                    const liste = [...new Set(e.target.value.split("\n").map((x) => x.trim()).filter(Boolean))];
+                    d((x) => void (x.satiscilar = liste));
+                  }}
+                  className="w-full max-w-sm resize-y rounded-xl bg-white/5 px-3 py-2.5 text-base font-semibold leading-7 outline-none ring-1 ring-white/10 focus:ring-2 focus:ring-ac-kirmizi"
+                />
+              </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Kalem cizim={CIZIM.gecerlilik} ad="Teklif geçerlilik süresi" alt="PDF'te bitiş tarihiyle yazılır">
                   <Fiyat etiket="Teklif geçerlilik süresi" birim="gün" deger={a.gecerlilikGun} onChange={(v) => d((x) => void (x.gecerlilikGun = Math.max(1, Math.round(v))))} />

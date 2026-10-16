@@ -2,19 +2,23 @@
 import { useEffect, useState } from "react";
 import type { Musteri } from "@/lib/tasarim";
 import { MusteriFormu } from "./MusteriFormu";
+import { SatisciSec } from "./SatisciSec";
 
 /** Kaydederken müşteri adı boşsa açılır: bilgileri alır, sonra kaydı yapar. */
 export function MusteriSor({
   musteri,
+  satisci: ilkSatisci,
   kaydet,
   kapat,
 }: {
   musteri: Musteri;
-  kaydet: (m: Musteri) => void;
+  satisci: string;
+  kaydet: (m: Musteri, satisci: string) => void;
   kapat: () => void;
 }) {
   const [m, setM] = useState(musteri);
   const [uyari, setUyari] = useState(false);
+  const [satisci, setSatisci] = useState(ilkSatisci);
 
   useEffect(() => {
     const esc = (e: KeyboardEvent) => e.key === "Escape" && kapat();
@@ -31,8 +35,8 @@ export function MusteriSor({
         onClick={(e) => e.stopPropagation()}
         onSubmit={(e) => {
           e.preventDefault();
-          if (!m.ad.trim()) return setUyari(true);
-          kaydet(m);
+          if (!m.ad.trim() || !satisci) return setUyari(true);
+          kaydet(m, satisci);
         }}
         className="yukari w-full max-w-md overflow-hidden rounded-2xl bg-ac-gece shadow-2xl ring-1 ring-white/10"
       >
@@ -41,22 +45,26 @@ export function MusteriSor({
           <header className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-lg font-extrabold uppercase tracking-wider">Teklif kime?</h2>
-              <p className="text-xs text-[var(--metin-2)]">Kaydetmeden önce kişi ya da firma bilgilerini girin.</p>
+              <p className="text-xs text-[var(--metin-2)]">Kaydetmeden önce teklifi vereni ve müşteriyi girin.</p>
             </div>
             <button type="button" onClick={kapat} aria-label="Kapat" className="rounded-lg px-2 py-1 text-xl text-[var(--metin-2)] hover:bg-white/10 hover:text-white">
               ✕
             </button>
           </header>
 
+          <SatisciSec deger={satisci} degistir={setSatisci} uyari={uyari && !satisci} />
           <MusteriFormu
             musteri={m}
             degistir={(y) => {
               setM(y);
-              if (y.ad.trim()) setUyari(false);
             }}
             ilkAlanaOdak
           />
-          {uyari && <p className="text-sm font-semibold text-amber-200">{m.tip === "firma" ? "Firma unvanı" : "Ad soyad"} gerekli.</p>}
+          {uyari && (
+            <p className="text-sm font-semibold text-amber-200">
+              {[!satisci && "Teklifi veren satışçı", !m.ad.trim() && (m.tip === "firma" ? "Firma unvanı" : "Ad soyad")].filter(Boolean).join(" ve ")} gerekli.
+            </p>
+          )}
 
           <div className="grid grid-cols-[auto_1fr] gap-2">
             <button type="button" onClick={kapat} className="rounded-xl bg-white/10 px-4 py-3 text-sm font-bold ring-1 ring-white/15 hover:bg-white/20">

@@ -79,7 +79,8 @@ export const useTasarim = create<Durum>()(
       return { tasarim: t };
     }),
   yukle: (t) => set({ tasarim: tasarimiTamamla(structuredClone(t)) }),
-  sifirla: (musteri) => set({ tasarim: { ...varsayilanTasarim(), ...(musteri && { musteri: structuredClone(musteri) }) } }),
+  sifirla: (musteri) =>
+    set((s) => ({ tasarim: { ...varsayilanTasarim(), satisci: s.tasarim.satisci, ...(musteri && { musteri: structuredClone(musteri) }) } })),
     }),
     {
       name: "ac-tel-tasarim",

@@ -68,6 +68,8 @@ export interface Tasarim {
   /** null: güncel fiyatlar (Ayarlar). Teklif ilk kaydedildiğinde dondurulur. */
   fiyatlar: DonukFiyat | null;
   musteri: Musteri;
+  /** Teklifi veren firma satışçısı (Ayarlar'daki listeden) */
+  satisci: string;
   zemin: Zemin;
   sekil: SekilId;
   olculer: Record<"A" | "B" | "C" | "D", number>;
@@ -133,6 +135,7 @@ export const varsayilanTasarim = (): Tasarim => ({
   teklifNo: "",
   fiyatlar: null,
   musteri: bosMusteri(),
+  satisci: "",
   zemin: "toprak",
   sekil: "dikdortgen",
   olculer: { A: 30, B: 20, C: 10, D: 8 },

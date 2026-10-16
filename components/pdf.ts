@@ -34,6 +34,7 @@ export function whatsappMetni(t: Tasarim, s: Sonuc, ay: Ayarlar) {
     `*Toplam: ${tl(s.toplam)}*`,
     "",
     `Teklif ${ay.gecerlilikGun} gün geçerlidir.${ay.firma.telefon ? ` İletişim: ${ay.firma.telefon}` : ""}`,
+    ...(t.satisci ? [`Teklifi veren: ${t.satisci} – ${ay.firma.ad}`] : []),
   ].join("\n");
 }
 
@@ -174,7 +175,7 @@ export function teklifHtml({ t, s, ayarlar, detayResim, no, tarih }: PdfGirdisi 
 <img class="filigran" src="${location.origin}${varlik("/logo.png")}" alt="">
 <div class="ic">
 <div class="serit"></div>
-<header><img src="${location.origin}${varlik("/logo.png")}" alt="${esc(firma.ad)}"><div><h1>${B("Fiyat Teklifi")}</h1><div class="k" style="text-align:right">${tarih.toLocaleDateString("tr-TR")} · No ${no}</div></div></header>
+<header><img src="${location.origin}${varlik("/logo.png")}" alt="${esc(firma.ad)}"><div><h1>${B("Fiyat Teklifi")}</h1><div class="k" style="text-align:right">${tarih.toLocaleDateString("tr-TR")} · No ${no}</div>${t.satisci ? `<div class="k" style="text-align:right">Teklifi veren: <b>${esc(t.satisci)}</b></div>` : ""}</div></header>
 ${
   m.ad.trim() || musteriSatiri || m.not.trim()
     ? `<div class="musteri"><span class="k">Sayın</span> <b>${esc(m.ad.trim() || "—")}</b>${musteriSatiri ? `<span class="k"> · ${musteriSatiri}</span>` : ""}${
