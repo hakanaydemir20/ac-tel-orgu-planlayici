@@ -5,9 +5,12 @@ import { hesapla, payandaVar } from "@/lib/hesap";
 import { DIREK_RENKLERI, DIREK_TIPLERI, TEL_TIPLERI, direkRengi, direkTipi, telTipi } from "@/lib/katalog";
 import { planSvg } from "@/lib/plan";
 import { betondaOlur, useTasarim } from "@/lib/store";
-import { KAPI_GENISLIK, KapiTuru, OLCU_ADLARI, SEKILLER, Tasarim, ZEMINLER, kenarlariHesapla } from "@/lib/tasarim";
+import { DUZLEMSEL_CAPLAR, KapiTuru, OLCU_ADLARI, SEKILLER, Tasarim, ZEMINLER, kapiEkle } from "@/lib/tasarim";
 import { DirekIkon, KapiIkon, SekilIkon, TelIkon, ZeminIkon } from "./ikonlar";
 import { SayiGiris, sayi, tl } from "./ui";
+import dynamic from "next/dynamic";
+
+const UyduHarita = dynamic(() => import("./UyduHarita").then((m) => m.UyduHarita), { ssr: false });
 
 // ---------- büyük seçim kartı ----------
 
@@ -69,19 +72,10 @@ function kapiSecimi(t: Tasarim): KapiSecimi {
   return yaya && arac ? "ikisi" : yaya ? "yaya" : arac ? "arac" : "yok";
 }
 
-/** Kapıları yeniden dizer: araç kapısı ilk kenarın ortasına, yaya kapısı varsa bir sonraki kenarın ortasına. */
+/** Kapıları yeniden kurar: ilk kenarın ortasında; ikisi birden ise yan yana. */
 function kapilariKur(x: Tasarim, secim: KapiSecimi) {
-  const kenarlar = kenarlariHesapla(x).filter((k) => k.aktif);
-  const turler: KapiTuru[] = { yok: [], yaya: ["yaya"], arac: ["arac"], ikisi: ["arac", "yaya"] }[secim] as KapiTuru[];
-  x.ekstra.kapilar = turler.flatMap((tur, i) => {
-    const k = kenarlar[Math.min(i * 2, kenarlar.length - 1)] ?? kenarlar[0];
-    if (!k) return [];
-    const g = KAPI_GENISLIK[tur];
-    // Tek kenarda iki kapı: yaya kapısı başa yakın durur
-    const ayni = i > 0 && k.i === kenarlar[0]?.i;
-    const konum = ayni ? Math.min(1, Math.max(0, k.yatay - g)) : Math.max(0, (k.yatay - g) / 2);
-    return [{ id: `${tur}${i}`, kenar: k.i, konum, tur, genislik: g }];
-  });
+  x.ekstra.kapilar = [];
+  for (const tur of ({ yok: [], yaya: ["yaya"], arac: ["arac"], ikisi: ["arac", "yaya"] } as Record<KapiSecimi, KapiTuru[]>)[secim]) kapiEkle(x, tur);
 }
 
 // ---------- adımlar ----------
@@ -103,6 +97,7 @@ export function SoruCevap({ kapat }: { kapat: () => void }) {
   const sonuc = useMemo(() => hesapla(t, ayarlar), [t, ayarlar]);
   const [sira, setSira] = useState(0);
   const [yardim, setYardim] = useState(false);
+  const [uydu, setUydu] = useState(false);
 
   const tip = telTipi(t.tel.tip);
   const dt = direkTipi(t.direk.tip);
@@ -115,15 +110,22 @@ export function SoruCevap({ kapat }: { kapat: () => void }) {
       baslik: "Kurulum alanı",
       soru: "Çit nereye kurulacak?",
       yardim:
-        "Toprak arazide direkler toprağa gömülür, istenirse dibine beton temel dökülür. Beton zeminde (avlu, otopark, çatı) direk gömülmez: alttaki çelik flanş plaka dübelle betona sabitlenir. Bu yüzden beton zeminde yalnızca profil ya da boru demir direk kullanılabilir.",
+        "Toprak arazide direkler toprağa gömülür, istenirse dibine beton temel dökülür. Beton zeminde (avlu, otopark, çatı) direk gömülmez: alttaki çelik flanş plaka dübelle betona sabitlenir. Duvar üstü: çit mevcut beton duvarın üstüne kurulur; direkler flanşla duvara dübellenir, payanda konmaz ve montaj ayrı tarifeden hesaplanır. Beton zemin ve duvar üstünde yalnızca profil ya da boru demir direk kullanılabilir.",
       icerik: () => (
-        <Izgara sutun={2}>
-          {ZEMINLER.map((z) => (
-            <Secenek key={z.id} secili={t.zemin === z.id} onClick={() => zeminSec(z.id)} resim={<ZeminIkon zemin={z.id} />} ad={z.ad} alt={z.aciklama} />
-          ))}
-        </Izgara>
+        <div className="space-y-6">
+          <Izgara sutun={3}>
+            {ZEMINLER.map((z) => (
+              <Secenek key={z.id} secili={t.zemin === z.id} onClick={() => zeminSec(z.id)} resim={<ZeminIkon zemin={z.id} />} ad={z.ad} alt={z.aciklama} />
+            ))}
+          </Izgara>
+          {t.zemin === "duvar" && (
+            <div className="max-w-xs">
+              <SayiGiris etiket="Duvar yüksekliği" adim={0.1} min={0.2} max={4} deger={t.duvarYukseklik} onChange={(v) => guncelle((x) => void (x.duvarYukseklik = v))} />
+            </div>
+          )}
+        </div>
       ),
-      ozet: () => ZEMINLER.find((z) => z.id === t.zemin)!.ad,
+      ozet: () => ZEMINLER.find((z) => z.id === t.zemin)!.ad + (t.zemin === "duvar" ? ` · ${sayi(t.duvarYukseklik, 2)} m duvar` : ""),
     },
     {
       id: "sekil",
@@ -148,9 +150,16 @@ export function SoruCevap({ kapat }: { kapat: () => void }) {
               ad={s.ad}
             />
           ))}
+          <Secenek
+            secili={t.sekil === "serbest" && !!t.konum}
+            onClick={() => setUydu(true)}
+            resim={<div className="grid h-full place-items-center text-5xl">🛰</div>}
+            ad="Uydudan çiz"
+            alt="Haritada köşeleri işaretle"
+          />
         </Izgara>
       ),
-      ozet: () => sekil.ad,
+      ozet: () => (t.sekil === "serbest" ? (t.konum ? "Uydudan çizildi" : "Elle çizim") : sekil.ad),
     },
     {
       id: "olcu",
@@ -278,7 +287,7 @@ export function SoruCevap({ kapat }: { kapat: () => void }) {
               resim={<DirekIkon tip={d.id} />}
               ad={d.ad}
               alt={d.aciklama}
-              pasif={t.zemin === "beton" && !betondaOlur(d.id) ? "Beton zeminde kullanılmaz" : undefined}
+              pasif={t.zemin !== "toprak" && !betondaOlur(d.id) ? "Beton zeminde kullanılmaz" : undefined}
             />
           ))}
         </Izgara>
@@ -327,7 +336,7 @@ export function SoruCevap({ kapat }: { kapat: () => void }) {
       baslik: "Direk üstü (kaş)",
       soru: "Direklerin üstünde kaş olsun mu?",
       yardim:
-        "Kaş, direğin tepesindeki uzantıdır; üstüne dikenli ya da jiletli tel takılır. Eğik: dışa doğru 45° yatık. Düz: dik yukarı uzar. V: iki yana açılır, iki sıra tel taşır. Panel çitte eğik kaş seçilirse köşeler çift direk ve payandalı olur.",
+        "Kaş, direğin tepesindeki uzantıdır; üstüne dikenli ya da jiletli tel takılır. Eğik: dışa doğru 45° yatık. Düz: dik yukarı uzar. V: iki yana açılır, iki sıra tel taşır. Panel çitte eğik kaş seçilirse köşeler çift direk ve payandalı olur; profil direkte ise köşe tek direktir ve üstünden iki kaş çıkar.",
       icerik: () => (
         <Izgara sutun={4}>
           {(
@@ -388,7 +397,7 @@ export function SoruCevap({ kapat }: { kapat: () => void }) {
       baslik: "Çitin üstü",
       soru: "Çitin üstüne ek koruma eklensin mi?",
       yardim:
-        "Dikenli tel: kaş kollarına sıra sıra çekilir. Jiletli spiral: halka halka açılan jiletli tel, yüksek güvenlik sağlar. Düzlemsel jiletli: spiral yerine düz bir jilet bant olarak çitin tepesine oturur. Dikenli ve spiral seçilince direkler otomatik kaşlı olur.",
+        "Dikenli tel: kaş kollarına sıra sıra çekilir. Helezon jiletli: halka halka açılan spiral jiletli tel, yüksek güvenlik sağlar; çapı 30–90 cm arası seçilir. Düzlemsel jiletli: spiral yerine düz bir jilet bant olarak çitin tepesine oturur. Dikenli ve helezon seçilince direkler otomatik kaşlı olur.",
       gizli: t.tel.tip === "dikenli",
       icerik: () => (
         <div className="space-y-6">
@@ -397,7 +406,7 @@ export function SoruCevap({ kapat }: { kapat: () => void }) {
               [
                 ["yok", "Yok"],
                 ["dikenli", "Dikenli tel"],
-                ["jiletli", "Jiletli spiral"],
+                ["jiletli", "Helezon jiletli"],
                 ["duzlemsel", "Düzlemsel jiletli"],
               ] as const
             ).map(([id, ad]) => (
@@ -414,6 +423,21 @@ export function SoruCevap({ kapat }: { kapat: () => void }) {
               />
             ))}
           </Izgara>
+          {(t.ekstra.ustTel === "duzlemsel" || t.ekstra.ustTel === "jiletli") && (
+            <div>
+              <div className="mb-2 text-sm font-bold uppercase tracking-wider text-[var(--metin-2)]">Çap</div>
+              <Izgara sutun={4}>
+                {DUZLEMSEL_CAPLAR.map((c) => (
+                  <Secenek
+                    key={c}
+                    secili={(t.ekstra.ustTel === "jiletli" ? t.ekstra.jiletliCap : t.ekstra.duzlemselCap) === c}
+                    onClick={() => guncelle((x) => void (x.ekstra.ustTel === "jiletli" ? (x.ekstra.jiletliCap = c) : (x.ekstra.duzlemselCap = c)))}
+                    ad={`Ø${c} cm`}
+                  />
+                ))}
+              </Izgara>
+            </div>
+          )}
           {t.ekstra.ustTel === "dikenli" && (
             <div className="max-w-xs">
               <SayiGiris etiket="Kaç sıra" birim="sıra" min={1} max={5} deger={t.ekstra.ustSira} onChange={(v) => guncelle((x) => void (x.ekstra.ustSira = Math.round(v)))} />
@@ -422,14 +446,14 @@ export function SoruCevap({ kapat }: { kapat: () => void }) {
         </div>
       ),
       ozet: () =>
-        ({ yok: "Yok", dikenli: `Dikenli tel · ${t.ekstra.ustSira} sıra`, jiletli: "Jiletli spiral", duzlemsel: "Düzlemsel jiletli" })[t.ekstra.ustTel],
+        ({ yok: "Yok", dikenli: `Dikenli tel · ${t.ekstra.ustSira} sıra`, jiletli: `Helezon jiletli · Ø${t.ekstra.jiletliCap} cm`, duzlemsel: `Düzlemsel jiletli · Ø${t.ekstra.duzlemselCap} cm` })[t.ekstra.ustTel],
     },
     {
       id: "kapi",
       baslik: "Kapılar",
       soru: "Çitte kapı olacak mı?",
       yardim:
-        "Yaya kapısı 1 m, araç kapısı 4 m genişliğinde gelir. Kapılar kenarların ortasına yerleştirilir. Yerini, genişliğini ya da sayısını sonra ana ekrandaki “Ekstralar” bölümünden değiştirebilirsiniz.",
+        "Yaya kapısı 1 m, araç kapısı 4 m genişliğinde gelir. Kapı kenarın ortasına konur; ikisi birden seçilirse yan yana dururlar. Yerini, genişliğini ya da sayısını sonra ana ekrandaki “Ekstralar” bölümünden değiştirebilirsiniz.",
       icerik: () => (
         <div className="grid items-center gap-6 md:grid-cols-[3fr_2fr]">
           <Izgara sutun={2}>
@@ -470,7 +494,7 @@ export function SoruCevap({ kapat }: { kapat: () => void }) {
               onClick={() => guncelle((x) => void (x.ekstra.temel = !x.ekstra.temel))}
               ad="Beton temel"
               alt="Direk dibine beton"
-              pasif={t.zemin === "beton" ? "Beton zeminde gerekmez" : undefined}
+              pasif={t.zemin !== "toprak" ? "Toprak dışında gerekmez" : undefined}
             />
             <Secenek secili={t.ekstra.nakliye} onClick={() => guncelle((x) => void (x.ekstra.nakliye = !x.ekstra.nakliye))} ad="Nakliye" alt="Sahaya taşıma" />
           </Izgara>
@@ -515,6 +539,7 @@ export function SoruCevap({ kapat }: { kapat: () => void }) {
         className="yukari flex h-full w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-ac-gece shadow-2xl ring-1 ring-white/10"
         onClick={(e) => e.stopPropagation()}
       >
+        {uydu && <UyduHarita kapat={() => setUydu(false)} />}
         {/* İlerleme çubuğu */}
         <div className="h-1.5 shrink-0 bg-white/10">
           <div className="h-full bg-ac-kirmizi transition-all duration-300" style={{ width: `${(i / OZET) * 100}%` }} />

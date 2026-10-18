@@ -61,7 +61,7 @@ export const useTasarim = create<Durum>()(
     }),
   direkTipiSec: (id) =>
     set((s) => {
-      if (s.tasarim.zemin === "beton" && !betondaOlur(id)) return s;
+      if (s.tasarim.zemin !== "toprak" && !betondaOlur(id)) return s;
       const t = structuredClone(s.tasarim);
       t.direk.tip = id;
       t.direk.olcu = direkTipi(id).olculer[0];
@@ -72,7 +72,7 @@ export const useTasarim = create<Durum>()(
     set((s) => {
       const t = structuredClone(s.tasarim);
       t.zemin = z;
-      if (z === "beton" && !betondaOlur(t.direk.tip)) {
+      if (z !== "toprak" && !betondaOlur(t.direk.tip)) {
         t.direk.tip = "profil";
         t.direk.olcu = direkTipi("profil").olculer[0];
       }

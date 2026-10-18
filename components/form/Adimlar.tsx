@@ -1,25 +1,34 @@
 "use client";
 import { useMemo, useState } from "react";
 import { DIREK_RENKLERI, DIREK_TIPLERI, TEL_TIPLERI, telTipi } from "@/lib/katalog";
-import { ciftKose, payandaVar, telMetreFiyati } from "@/lib/hesap";
+import { ciftKose, ikiKasliKose, payandaVar, telMetreFiyati } from "@/lib/hesap";
 import { useEtkinAyarlar } from "@/lib/ayarlar";
 import { betondaOlur, useTasarim } from "@/lib/store";
 import { serbesteGec } from "@/lib/serbest";
-import { KAPI_GENISLIK, KapiTuru, OLCU_ADLARI, SEKILLER, ZEMINLER, kenarAyari, kenarlariHesapla, kenarHarfi } from "@/lib/tasarim";
+import { DUZLEMSEL_CAPLAR, KapiTuru, kapiEkle, OLCU_ADLARI, SEKILLER, ZEMINLER, kenarAyari, kenarlariHesapla, kenarHarfi } from "@/lib/tasarim";
 import { CizimAlani } from "./CizimAlani";
+import dynamic from "next/dynamic";
+
+const UyduHarita = dynamic(() => import("../UyduHarita").then((m) => m.UyduHarita), { ssr: false });
 import { DirekIkon, KapiIkon, SekilIkon, TelIkon, ZeminIkon } from "../ikonlar";
 import { Adim, Anahtar, Etiket, Kart, SayiGiris, Secici, sayi, tl } from "../ui";
 
 /** En temel seçim: direkler nereye dikilecek? Direk boyu, sabitleme ve fiyatı belirler. */
 export function ZeminAdimi() {
-  const { tasarim: t, zeminSec } = useTasarim();
+  const { tasarim: t, zeminSec, guncelle } = useTasarim();
   return (
     <Adim no={1} baslik="Kurulum alanı" ipucu="Çit nereye kurulacak?">
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         {ZEMINLER.map((z) => (
           <Kart key={z.id} buyuk secili={t.zemin === z.id} onClick={() => zeminSec(z.id)} resim={<ZeminIkon zemin={z.id} />} ad={z.ad} alt={z.aciklama} />
         ))}
       </div>
+      {t.zemin === "duvar" && (
+        <div className="grid grid-cols-2 items-end gap-3">
+          <SayiGiris etiket="Duvar yüksekliği" adim={0.1} min={0.2} max={4} deger={t.duvarYukseklik} onChange={(v) => guncelle((x) => void (x.duvarYukseklik = v))} />
+          <p className="pb-2 text-[11px] leading-snug text-[var(--metin-2)]">Mevcut duvar; fiyata girmez. Duvar üstü montaj ayrı tarifeden, payanda konmaz.</p>
+        </div>
+      )}
     </Adim>
   );
 }
@@ -27,6 +36,7 @@ export function ZeminAdimi() {
 export function AraziAdimi() {
   const { tasarim: t, guncelle } = useTasarim();
   const [detay, setDetay] = useState(false);
+  const [uydu, setUydu] = useState(false);
   const kenarlar = useMemo(() => kenarlariHesapla(t), [t]);
   const adlar = OLCU_ADLARI[t.sekil];
   const olculer = SEKILLER.find((s) => s.id === t.sekil)!.olculer;
@@ -55,6 +65,15 @@ export function AraziAdimi() {
           />
         ))}
       </div>
+
+      <button
+        type="button"
+        onClick={() => setUydu(true)}
+        className="cam flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold transition hover:bg-[var(--yuzey-2)]"
+      >
+        🛰 Uydu haritasından çiz
+      </button>
+      {uydu && <UyduHarita kapat={() => setUydu(false)} />}
 
       {t.sekil === "serbest" && <CizimAlani />}
 
@@ -188,7 +207,7 @@ export function DirekAdimi({ ozet }: { ozet: { kose: number; gergi: number; paya
             resim={<DirekIkon tip={d.id} />}
             ad={d.ad}
             alt={d.aciklama}
-            pasif={t.zemin === "beton" && !betondaOlur(d.id) ? "Beton zeminde demir direk kullanılır" : undefined}
+            pasif={t.zemin !== "toprak" && !betondaOlur(d.id) ? "Beton zeminde demir direk kullanılır" : undefined}
           />
         ))}
       </div>
@@ -253,8 +272,10 @@ export function DirekAdimi({ ozet }: { ozet: { kose: number; gergi: number; paya
             : t.direk.payandaHer > 0
               ? `Her ${t.direk.payandaHer}. direk iki yana payandalı gergi direği.`
               : "Payanda yalnız köşe, uç ve kapı direklerinde."}
-          {t.tel.tip === "kafes" && " Örgü telde köşeler çift direk."}
-          {t.tel.tip === "panel" && (ciftKose(t) ? " Eğik kaşlı panelde köşeler çift direk." : " Panelde köşeler tek direk (eğik kaşta çift).")}
+          {t.tel.tip === "kafes" && !ikiKasliKose(t) && " Örgü telde köşeler çift direk."}
+          {ikiKasliKose(t)
+            ? " Profil direkte eğik kaş: köşeler tek direk, üstünden iki kaş çıkar."
+            : t.tel.tip === "panel" && (ciftKose(t) ? " Eğik kaşlı panelde köşeler çift direk." : " Panelde köşeler tek direk (eğik kaşta çift).")}
         </p>
       </div>
       <div className="flex flex-wrap gap-1.5 text-xs">
@@ -277,13 +298,8 @@ export function DirekAdimi({ ozet }: { ozet: { kose: number; gergi: number; paya
 export function EkstraAdimi() {
   const { tasarim: t, guncelle } = useTasarim();
   const kenarlar = useMemo(() => kenarlariHesapla(t), [t]);
-  const kapiEkle = (tur: KapiTuru) =>
-    guncelle((x) => {
-      const k = kenarlar.find((e) => e.aktif) ?? kenarlar[0];
-      if (!k) return; // çizimde henüz kenar yok
-      const g = KAPI_GENISLIK[tur];
-      x.ekstra.kapilar.push({ id: Math.random().toString(36).slice(2, 8), kenar: k.i, konum: Math.max(0, (k.yatay - g) / 2), tur, genislik: g });
-    });
+  // Yeni kapı varsa diğer kapının yanına bitişik eklenir
+  const kapiyiEkle = (tur: KapiTuru) => guncelle((x) => kapiEkle(x, tur));
 
   return (
     <Adim no={5} baslik="Ekstralar" ipucu="Kapı, üst tel ve hizmetler">
@@ -293,13 +309,24 @@ export function EkstraAdimi() {
           <Secici
             degerler={["yok", "dikenli", "jiletli", "duzlemsel"] as const}
             secili={t.ekstra.ustTel}
-            bicim={(v) => ({ yok: "Yok", dikenli: "Dikenli tel", jiletli: "Jiletli spiral", duzlemsel: "Düzlemsel jiletli" })[v]}
+            bicim={(v) => ({ yok: "Yok", dikenli: "Dikenli tel", jiletli: "Helezon jiletli", duzlemsel: "Düzlemsel jiletli" })[v]}
             onChange={(v) => guncelle((x) => {
               x.ekstra.ustTel = v;
               // Dikenli ve spiral kaş koluna takılır; düzlemsel jiletli çitin tepesine dik oturur
               if (v === "dikenli" || v === "jiletli") x.direk.kasli = true;
             })}
           />
+          {(t.ekstra.ustTel === "duzlemsel" || t.ekstra.ustTel === "jiletli") && (
+            <div className="mt-3">
+              <Etiket>Çap</Etiket>
+              <Secici
+                degerler={DUZLEMSEL_CAPLAR}
+                secili={t.ekstra.ustTel === "jiletli" ? t.ekstra.jiletliCap : t.ekstra.duzlemselCap}
+                bicim={(v) => `Ø${v} cm`}
+                onChange={(v) => guncelle((x) => void (x.ekstra.ustTel === "jiletli" ? (x.ekstra.jiletliCap = v) : (x.ekstra.duzlemselCap = v)))}
+              />
+            </div>
+          )}
           {t.ekstra.ustTel === "dikenli" && (
             <div className="mt-3 w-40">
               <SayiGiris kucuk etiket="Sıra" birim="sıra" min={1} max={5} deger={t.ekstra.ustSira} onChange={(v) => guncelle((x) => void (x.ekstra.ustSira = Math.round(v)))} />
@@ -353,10 +380,10 @@ export function EkstraAdimi() {
             );
           })}
           <div className="grid grid-cols-2 gap-2">
-            <button type="button" disabled={!kenarlar.length} onClick={() => kapiEkle("yaya")} className="disabled:opacity-40 cam rounded-xl py-2.5 text-sm font-bold hover:bg-[var(--yuzey-2)]">
+            <button type="button" disabled={!kenarlar.length} onClick={() => kapiyiEkle("yaya")} className="disabled:opacity-40 cam rounded-xl py-2.5 text-sm font-bold hover:bg-[var(--yuzey-2)]">
               + Yaya kapısı
             </button>
-            <button type="button" disabled={!kenarlar.length} onClick={() => kapiEkle("arac")} className="disabled:opacity-40 cam rounded-xl py-2.5 text-sm font-bold hover:bg-[var(--yuzey-2)]">
+            <button type="button" disabled={!kenarlar.length} onClick={() => kapiyiEkle("arac")} className="disabled:opacity-40 cam rounded-xl py-2.5 text-sm font-bold hover:bg-[var(--yuzey-2)]">
               + Araç kapısı
             </button>
           </div>

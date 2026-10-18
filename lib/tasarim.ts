@@ -5,10 +5,13 @@ export type SekilId = "duz" | "kare" | "dikdortgen" | "L" | "U" | "serbest";
 export type Nokta2 = [number, number]; // x, z (m)
 export type KapiTuru = "yaya" | "arac";
 /** Kurulum alanı: toprakta direk gömülür, betonda flanşlı demir direk dübelle sabitlenir. */
-export type Zemin = "toprak" | "beton";
+export type Zemin = "toprak" | "beton" | "duvar";
 /** egik: 45° dışa · duz: dik uzatma · v: iki yana 45° (V / Y kaş) */
 export type KasTipi = "egik" | "duz" | "v";
 export type UstTel = "yok" | "dikenli" | "jiletli" | "duzlemsel";
+/** Düzlemsel jiletli tel halka çapı, cm */
+export const DUZLEMSEL_CAPLAR = [30, 45, 60, 90] as const;
+export type DuzlemselCap = (typeof DUZLEMSEL_CAPLAR)[number];
 
 export interface Kapi {
   id: string;
@@ -71,9 +74,13 @@ export interface Tasarim {
   /** Teklifi veren firma satışçısı (Ayarlar'daki listeden) */
   satisci: string;
   zemin: Zemin;
+  /** Duvar üstü montajda mevcut beton duvarın yüksekliği, m */
+  duvarYukseklik: number;
   sekil: SekilId;
   olculer: Record<"A" | "B" | "C" | "D", number>;
   serbest: SerbestSekil;
+  /** Uydu haritasından çizildiyse ilk köşenin konumu */
+  konum: { lat: number; lng: number } | null;
   kenarlar: KenarAyar[]; // eksik indeksler varsayılan ayarı kullanır
   tel: {
     tip: TelTipiId;
@@ -98,6 +105,10 @@ export interface Tasarim {
   ekstra: {
     ustTel: UstTel;
     ustSira: number;
+    /** Düzlemsel jiletli tel çapı, cm */
+    duzlemselCap: DuzlemselCap;
+    /** Helezon (jiletli spiral) tel çapı, cm */
+    jiletliCap: DuzlemselCap;
     kapilar: Kapi[];
     montaj: boolean;
     temel: boolean;
@@ -111,6 +122,7 @@ export const KAPI_GENISLIK: Record<KapiTuru, number> = { yaya: 1, arac: 4 };
 export const ZEMINLER: { id: Zemin; ad: string; aciklama: string }[] = [
   { id: "toprak", ad: "Toprak Arazi", aciklama: "Direk toprağa gömülür" },
   { id: "beton", ad: "Beton Zemin", aciklama: "Flanşlı demir direk + dübel" },
+  { id: "duvar", ad: "Duvar Üstü", aciklama: "Beton duvarın üstüne flanşlı direk" },
 ];
 
 export const SEKILLER: { id: SekilId; ad: string; olculer: ("A" | "B" | "C" | "D")[] }[] = [
@@ -137,15 +149,19 @@ export const varsayilanTasarim = (): Tasarim => ({
   musteri: bosMusteri(),
   satisci: "",
   zemin: "toprak",
+  duvarYukseklik: 0.5,
   sekil: "dikdortgen",
   olculer: { A: 30, B: 20, C: 10, D: 8 },
   serbest: { noktalar: [], kapali: false },
+  konum: null,
   kenarlar: Array.from({ length: 8 }, () => ({ aktif: true, egim: 0 })),
   tel: { tip: "kafes", yukseklik: 1.5, goz: 50, kalinlik: 2.5, kaplama: "galvaniz", sira: 5 },
   direk: { tip: "beton", olcu: "10x10", aralik: 2.5, payandaHer: 10, kasli: false, kasTipi: "egik", renk: "galvaniz" },
   ekstra: {
     ustTel: "yok",
     ustSira: 3,
+    duzlemselCap: 60,
+    jiletliCap: 45,
     kapilar: [{ id: "k1", kenar: 0, konum: 13, tur: "arac", genislik: 4 }],
     montaj: true,
     temel: true,
@@ -235,4 +251,25 @@ export const kenarHarfi = (i: number) => String(i + 1);
 export function kenarAyari(t: Tasarim, i: number): KenarAyar {
   for (let j = t.kenarlar.length; j <= i; j++) t.kenarlar[j] = { aktif: true, egim: 0 };
   return t.kenarlar[i];
+}
+
+/**
+ * Kapı ekler (taslak üzerinde). Çitte başka kapı varsa yeni kapı aynı kenarda onun yanına
+ * bitişik konur (aralarında tek ortak kapı direği); kenardaki kapı grubu ortalanır.
+ */
+export function kapiEkle(x: Tasarim, tur: KapiTuru) {
+  const kenarlar = kenarlariHesapla(x);
+  const kenar = kenarlar.find((k) => k.i === x.ekstra.kapilar[0]?.kenar && k.aktif) ?? kenarlar.find((k) => k.aktif) ?? kenarlar[0];
+  if (!kenar) return; // çizimde henüz kenar yok
+  const g = KAPI_GENISLIK[tur];
+  x.ekstra.kapilar.push({ id: Math.random().toString(36).slice(2, 8), kenar: kenar.i, konum: 0, tur, genislik: g });
+  const grup = x.ekstra.kapilar.filter((k) => k.kenar === kenar.i).sort((a, b) => a.konum - b.konum || 0);
+  // Yeni eklenen sona; araç kapısı önde dursun
+  grup.sort((a, b) => (a.tur === b.tur ? 0 : a.tur === "arac" ? -1 : 1));
+  const toplam = grup.reduce((s, k) => s + k.genislik, 0);
+  let konum = Math.max(0, (kenar.yatay - toplam) / 2);
+  for (const k of grup) {
+    k.konum = Math.round(konum * 100) / 100;
+    konum += k.genislik;
+  }
 }

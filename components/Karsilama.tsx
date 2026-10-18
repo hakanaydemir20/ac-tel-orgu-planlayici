@@ -27,34 +27,47 @@ function CitCizimi() {
   );
 }
 
-/** Kapı kartındaki çizim: çift kanatlı araç kapısı. */
-function KapiCizimi() {
+/** Yaya kapısı kartındaki çizim: tek kanatlı kapı. */
+function YayaKapiCizimi() {
   return (
     <svg viewBox="0 0 240 140" className="h-full w-full" aria-hidden>
       <path d="M10 124h220" stroke="currentColor" strokeOpacity="0.35" strokeWidth="2" />
-      <rect x="20" y="22" width="12" height="102" rx="2" fill="currentColor" opacity="0.9" />
-      <rect x="208" y="22" width="12" height="102" rx="2" fill="currentColor" opacity="0.9" />
-      {[0, 1].map((k) => {
-        const x = 36 + k * 86;
-        return (
-          <g key={k}>
-            <rect x={x} y="34" width="82" height="84" rx="3" fill="none" stroke="currentColor" strokeWidth="4" />
-            {Array.from({ length: 8 }, (_, i) => (
-              <path key={i} d={`M${x + 10 + i * 9} 38v76`} stroke="currentColor" strokeWidth="2" opacity="0.6" />
-            ))}
-            <path d={`M${x} 76h82`} stroke="currentColor" strokeWidth="3" opacity="0.8" />
-          </g>
-        );
-      })}
-      <circle cx="114" cy="78" r="3.5" fill="var(--color-ac-kirmizi)" />
-      <circle cx="126" cy="78" r="3.5" fill="var(--color-ac-kirmizi)" />
+      <rect x="70" y="22" width="12" height="102" rx="2" fill="currentColor" opacity="0.9" />
+      <rect x="158" y="22" width="12" height="102" rx="2" fill="currentColor" opacity="0.9" />
+      <rect x="86" y="30" width="68" height="90" rx="3" fill="none" stroke="currentColor" strokeWidth="4" />
+      {Array.from({ length: 7 }, (_, i) => (
+        <path key={i} d={`M${95 + i * 9} 34v82`} stroke="currentColor" strokeWidth="2" opacity="0.6" />
+      ))}
+      <path d="M86 75h68" stroke="currentColor" strokeWidth="3" opacity="0.8" />
+      <circle cx="146" cy="78" r="3.5" fill="var(--color-ac-kirmizi)" />
+    </svg>
+  );
+}
+
+/** Araç kapısı kartındaki çizim: ray üstünde sürgülü kapı. */
+function SurguluKapiCizimi() {
+  return (
+    <svg viewBox="0 0 240 140" className="h-full w-full" aria-hidden>
+      <path d="M10 124h220" stroke="currentColor" strokeOpacity="0.35" strokeWidth="2" />
+      <path d="M14 121h212" stroke="currentColor" strokeWidth="3" opacity="0.7" />
+      <rect x="18" y="22" width="12" height="102" rx="2" fill="currentColor" opacity="0.9" />
+      <rect x="210" y="22" width="12" height="102" rx="2" fill="currentColor" opacity="0.9" />
+      <rect x="60" y="34" width="140" height="80" rx="3" fill="none" stroke="currentColor" strokeWidth="4" />
+      {Array.from({ length: 13 }, (_, i) => (
+        <path key={i} d={`M${70 + i * 10} 38v72`} stroke="currentColor" strokeWidth="2" opacity="0.6" />
+      ))}
+      <circle cx="80" cy="119" r="5" fill="none" stroke="currentColor" strokeWidth="2" />
+      <circle cx="180" cy="119" r="5" fill="none" stroke="currentColor" strokeWidth="2" />
+      <rect x="34" y="96" width="18" height="22" rx="2" fill="var(--color-ac-kirmizi)" opacity="0.85" />
+      <path d="M36 70h14m-5-5 5 5-5 5" stroke="var(--color-ac-kirmizi)" strokeWidth="3" fill="none" strokeLinecap="round" />
     </svg>
   );
 }
 
 const KARTLAR = [
   { href: "/cit", ad: "Çit Planlayıcı", aciklama: "Araziyi çizin, tel ve direği seçin; 3D görün, teklif verin.", Cizim: CitCizimi },
-  { href: "/kapi", ad: "Kapı Planlayıcı", aciklama: "Araç ve yaya kapılarını ölçüsüyle planlayın.", Cizim: KapiCizimi },
+  { href: "/kapi", ad: "Yaya Kapısı Planlayıcı", aciklama: "Yaya kapısını ölçüsüyle planlayın.", Cizim: YayaKapiCizimi },
+  { href: "/arac", ad: "Araç Kapısı Planlayıcı", aciklama: "Otomatik sürgülü ve diğer araç kapılarını hazır tasarımlardan ölçü seçerek planlayın.", Cizim: SurguluKapiCizimi },
 ];
 
 /** Karşılama: planlanacak iş tipini seçtiren iki büyük kart. */
@@ -70,7 +83,7 @@ export function Karsilama() {
         <p className="text-sm text-[var(--metin-2)]">Planlamak istediğiniz işi seçin</p>
       </div>
 
-      <div className="grid w-full max-w-4xl gap-5 sm:grid-cols-2">
+      <div className="grid w-full max-w-6xl gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {KARTLAR.map(({ href, ad, aciklama, Cizim }) => (
           <Link
             key={href}

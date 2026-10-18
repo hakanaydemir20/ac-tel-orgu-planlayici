@@ -173,6 +173,16 @@ export function ZeminIkon({ zemin }: { zemin: Zemin }) {
         <rect x="33" y="34" width="14" height="8" rx="1" fill="#9aa5b4" fillOpacity={0.6} />
       </svg>
     );
+  if (zemin === "duvar")
+    return (
+      <svg viewBox="0 0 80 48" className="h-full w-full">
+        <rect x="4" y="44" width="72" height="3" rx="1" fill="#7a5230" fillOpacity={0.55} />
+        <rect x="26" y="24" width="28" height="20" fill="#9aa5b4" fillOpacity={0.7} stroke="currentColor" strokeOpacity={0.4} />
+        <path d="M26 31h28M26 37h28M40 24v7M33 31v6M47 31v6M40 37v7" stroke="currentColor" strokeOpacity={0.35} />
+        <rect x="37" y="3" width="6" height="19" fill="none" stroke="currentColor" strokeWidth="2" />
+        <rect x="32" y="21.5" width="16" height="2.5" fill="currentColor" />
+      </svg>
+    );
   return (
     <svg viewBox="0 0 80 48" className="h-full w-full">
       <rect x="6" y="32" width="68" height="12" rx="2" fill="#9aa5b4" fillOpacity={0.6} />

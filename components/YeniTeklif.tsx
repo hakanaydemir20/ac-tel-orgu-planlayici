@@ -1,16 +1,25 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useTasarim } from "@/lib/store";
-import { bosMusteri } from "@/lib/tasarim";
+import { type Musteri, bosMusteri } from "@/lib/tasarim";
 import { MusteriFormu } from "./MusteriFormu";
 import { SatisciSec } from "./SatisciSec";
 
 /** "+ Yeni teklif": teklif verilecek kişi/firmayı alır, ekranı temizleyip bu bilgilerle başlatır. */
-export function YeniTeklif({ kapat }: { kapat: () => void }) {
+export function YeniTeklif({
+  kapat,
+  baslat: disBaslat,
+  ilkSatisci,
+}: {
+  kapat: () => void;
+  /** Başka planlayıcı (ör. araç kapısı) kendi teklifini başlatır; yoksa çit teklifi */
+  baslat?: (m: Musteri, satisci: string) => void;
+  ilkSatisci?: string;
+}) {
   const sifirla = useTasarim((s) => s.sifirla);
   const kayitli = useTasarim((s) => !!s.tasarim.teklifNo);
   const [m, setM] = useState(bosMusteri);
-  const [satisci, setSatisci] = useState(() => useTasarim.getState().tasarim.satisci);
+  const [satisci, setSatisci] = useState(() => ilkSatisci ?? useTasarim.getState().tasarim.satisci);
   const guncelle = useTasarim((s) => s.guncelle);
 
   useEffect(() => {
@@ -20,8 +29,11 @@ export function YeniTeklif({ kapat }: { kapat: () => void }) {
   }, [kapat]);
 
   const baslat = () => {
-    sifirla(m);
-    guncelle((x) => void (x.satisci = satisci));
+    if (disBaslat) disBaslat(m, satisci);
+    else {
+      sifirla(m);
+      guncelle((x) => void (x.satisci = satisci));
+    }
     kapat();
   };
 

@@ -1,12 +1,14 @@
 "use client";
 import Image from "next/image";
-import { ReactNode, useEffect, useRef, useState } from "react";
+import { ReactNode, createContext, useContext, useEffect, useRef, useState } from "react";
 import { useAyarlar } from "@/lib/ayarlar";
 import { yukseklikAnahtari } from "@/lib/hesap";
 import { type Ayarlar, DIREK_TIPLERI, KAS_UZUNLUK, TEL_TIPLERI, olcuAnahtari, telTipi } from "@/lib/katalog";
 import { DirekIkon, KapiIkon, TelIkon, ZeminIkon } from "./ikonlar";
 import { sayi, tl } from "./ui";
 import { varlik } from "@/lib/yol";
+import { DUZLEMSEL_CAPLAR } from "@/lib/tasarim";
+import { KAPI_DOLGULARI, KAPI_TIPLERI } from "@/lib/aracKapi";
 
 // ---------- küçük çizimler (bağlantı ve hizmet kalemleri) ----------
 
@@ -308,7 +310,8 @@ const BOLUMLER = [
   { id: "direk", ad: "Direk fiyatları", aciklama: "Direk boyunun metresi başı" },
   { id: "beton", ad: "Beton zemin", aciklama: "Flanşlı demir direk ve dübel" },
   { id: "baglanti", ad: "Bağlantı", aciklama: "Gergi, kelepçe, bağ teli" },
-  { id: "kapi", ad: "Kapılar", aciklama: "Adet fiyatı" },
+  { id: "kapi", ad: "Kapılar", aciklama: "Çitteki kapılar, adet fiyatı" },
+  { id: "aracKapi", ad: "Araç kapısı", aciklama: "Araç kapısı planlayıcı: m² ve aksesuar fiyatları" },
   { id: "hizmet", ad: "Hizmetler ve vergi", aciklama: "Montaj, temel, nakliye, KDV" },
 ] as const;
 type BolumId = (typeof BOLUMLER)[number]["id"];
@@ -320,11 +323,16 @@ const MENU_IKON: Record<BolumId, ReactNode> = {
   beton: <ZeminIkon zemin="beton" />,
   baglanti: CIZIM.kelepce,
   kapi: <KapiIkon arac />,
+  aracKapi: <KapiIkon arac />,
   hizmet: CIZIM.nakliye,
 };
 
+/** Ekranda yalnız soldan seçilen bölüm görünür (kaydırarak bölümler arası geçiş yok). */
+const AktifBolum = createContext<BolumId>("firma");
+
 function Bolum({ id, ikon, children }: { id: BolumId; ikon: ReactNode; children: ReactNode }) {
   const b = BOLUMLER.find((x) => x.id === id)!;
+  if (useContext(AktifBolum) !== id) return null;
   return (
     <section id={`ayar-${id}`} data-bolum={id} className="scroll-mt-4 space-y-4">
       <header className="flex items-center gap-3 border-b border-white/10 pb-3">
@@ -340,10 +348,10 @@ function Bolum({ id, ikon, children }: { id: BolumId; ikon: ReactNode; children:
 }
 
 /** Tam ekran ayarlar: solda bölüm menüsü, sağda resimli fiyat kartları. */
-export function AyarPaneli({ kapat }: { kapat: () => void }) {
+export function AyarPaneli({ kapat, ilkBolum = "firma" }: { kapat: () => void; ilkBolum?: BolumId }) {
   const { ayarlar: a, degistir, varsayilanaDon } = useAyarlar();
   const icerik = useRef<HTMLDivElement>(null);
-  const [aktif, setAktif] = useState<BolumId>("firma");
+  const [aktif, setAktif] = useState<BolumId>(ilkBolum);
 
   useEffect(() => {
     const esc = (e: KeyboardEvent) => e.key === "Escape" && kapat();
@@ -351,22 +359,9 @@ export function AyarPaneli({ kapat }: { kapat: () => void }) {
     return () => window.removeEventListener("keydown", esc);
   }, [kapat]);
 
-  // Kaydırdıkça menüde bulunulan bölüm işaretlenir
-  const tiklandi = useRef(0); // menüden seçilince kayma bitene kadar işaret sabit kalsın
-  const kaydirildi = () => {
-    const kutu = icerik.current;
-    if (!kutu || performance.now() - tiklandi.current < 900) return;
-    const ust = kutu.getBoundingClientRect().top + 120;
-    let son: BolumId = "firma";
-    kutu.querySelectorAll<HTMLElement>("[data-bolum]").forEach((el) => {
-      if (el.getBoundingClientRect().top <= ust) son = el.dataset.bolum as BolumId;
-    });
-    setAktif(son);
-  };
   const git = (id: BolumId) => {
     setAktif(id);
-    tiklandi.current = performance.now();
-    icerik.current?.querySelector(`#ayar-${id}`)?.scrollIntoView({ block: "start" });
+    icerik.current?.scrollTo({ top: 0 });
   };
 
   const ornekBoy = (gomme: number) => Math.ceil((1.5 + gomme) * 4) / 4; // 1,5 m çit için direk boyu
@@ -423,8 +418,9 @@ export function AyarPaneli({ kapat }: { kapat: () => void }) {
           ))}
         </nav>
 
-        <div ref={icerik} onScroll={kaydirildi} className="ince-kaydirma min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-5xl space-y-12 p-4 pb-[60vh] sm:p-6 sm:pb-[60vh] lg:p-8 lg:pb-[60vh]">
+        <div ref={icerik} className="ince-kaydirma min-h-0 flex-1 overflow-y-auto">
+          <AktifBolum.Provider value={aktif}>
+          <div key={aktif} className="yukari mx-auto max-w-5xl space-y-12 p-4 sm:p-6 lg:p-8">
             <Bolum id="firma" ikon={CIZIM.gecerlilik}>
               <div className="cam grid gap-4 rounded-2xl p-4 sm:grid-cols-2 md:p-5">
                 <div className="sm:col-span-2">
@@ -477,11 +473,23 @@ export function AyarPaneli({ kapat }: { kapat: () => void }) {
                 <Kalem cizim={<TelIkon tip="dikenli" />} ad="Dikenli tel" alt="Tek sıra, metre başı. Üst dikenli de bunu kullanır.">
                   <Fiyat etiket="Dikenli tel" deger={a.dikenliMetre} onChange={(v) => d((x) => void (x.dikenliMetre = v))} />
                 </Kalem>
-                <Kalem cizim={CIZIM.jiletli} ad="Jiletli spiral" alt="Çit metresi başı">
-                  <Fiyat etiket="Jiletli spiral" deger={a.jiletliMetre} onChange={(v) => d((x) => void (x.jiletliMetre = v))} />
+                <Kalem cizim={CIZIM.jiletli} ad="Helezon jiletli" alt="Çit metresi başı, helezon çapına göre">
+                  <div className="grid grid-cols-2 gap-2">
+                    {DUZLEMSEL_CAPLAR.map((c) => (
+                      <OlcuFiyat key={c} ust={`Ø${c} cm`}>
+                        <Fiyat etiket={`Helezon jiletli Ø${c} cm`} deger={a.jiletliCapMetre[String(c)] ?? 0} onChange={(v) => d((x) => void (x.jiletliCapMetre[String(c)] = v))} />
+                      </OlcuFiyat>
+                    ))}
+                  </div>
                 </Kalem>
-                <Kalem cizim={CIZIM.jiletli} ad="Düzlemsel jiletli" alt="Çit metresi başı">
-                  <Fiyat etiket="Düzlemsel jiletli" deger={a.duzlemselMetre} onChange={(v) => d((x) => void (x.duzlemselMetre = v))} />
+                <Kalem cizim={CIZIM.jiletli} ad="Düzlemsel jiletli" alt="Çit metresi başı, halka çapına göre">
+                  <div className="grid grid-cols-2 gap-2">
+                    {DUZLEMSEL_CAPLAR.map((c) => (
+                      <OlcuFiyat key={c} ust={`Ø${c} cm`}>
+                        <Fiyat etiket={`Düzlemsel jiletli Ø${c} cm`} deger={a.duzlemselCapMetre[String(c)] ?? 0} onChange={(v) => d((x) => void (x.duzlemselCapMetre[String(c)] = v))} />
+                      </OlcuFiyat>
+                    ))}
+                  </div>
                 </Kalem>
                 <Kalem cizim={CIZIM.pvc} ad="PVC kaplama farkı" alt="Tel fiyatına eklenir">
                   <Fiyat etiket="PVC kaplama farkı" birim="%" deger={a.pvcFarkYuzde} onChange={(v) => d((x) => void (x.pvcFarkYuzde = v))} />
@@ -559,10 +567,66 @@ export function AyarPaneli({ kapat }: { kapat: () => void }) {
               </div>
             </Bolum>
 
+            <Bolum id="aracKapi" ikon={<KapiIkon arac />}>
+              <div className="cam overflow-x-auto rounded-2xl p-4 md:p-5">
+                <div className="mb-2 font-bold">Kanat fiyatı · ₺ / m²</div>
+                <table className="w-full min-w-[560px] border-separate border-spacing-2">
+                  <thead>
+                    <tr>
+                      <th className="w-36 text-left text-xs font-bold uppercase tracking-wider text-[var(--metin-2)]">Tip ↓ · Dolgu →</th>
+                      {KAPI_DOLGULARI.map((g) => (
+                        <th key={g.id} className="text-center text-sm font-extrabold">
+                          {g.ad}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {KAPI_TIPLERI.map((tp) => (
+                      <tr key={tp.id}>
+                        <th className="text-left text-sm font-extrabold">{tp.ad}</th>
+                        {KAPI_DOLGULARI.map((g) => (
+                          <td key={g.id}>
+                            <Fiyat
+                              etiket={`${tp.ad} ${g.ad} m² fiyatı`}
+                              birim="₺/m²"
+                              deger={a.aracKapi.m2[tp.id]?.[g.id] ?? 0}
+                              onChange={(v) => d((x) => void (x.aracKapi.m2[tp.id][g.id] = v))}
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="mt-1 text-xs text-[var(--metin-2)]">Konsol sürgülüde kanat, kuyruğuyla açıklığın 1,5 katı uzunluktan hesaplanır.</p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {(
+                  [
+                    ["motorSurgulu", "Sürgü motoru + 2 kumanda", "Raylı ve konsol sürgülü", "₺/takım"],
+                    ["motorKanat", "Kanat kol motoru", "Kanat başına; çift kanatta 2 adet", "₺/adet"],
+                    ["fotosel", "Fotosel (çift)", "Güvenlik fotoseli", "₺/takım"],
+                    ["flasor", "Flaşör lamba", "Hareket uyarı ışığı", "₺/adet"],
+                    ["rayMetre", "Ray / beton temel", "Raylıda 2× açıklık, konsolda kuyruk boyu", "₺/m"],
+                    ["montaj", "Kapı montajı", "Kapı başına", "₺/adet"],
+                    ["mizrakMetre", "Mızrak uç", "Kanat üstü, kanat metresi başı", "₺/m"],
+                  ] as const
+                ).map(([anahtar, ad, alt, birim]) => (
+                  <Kalem key={anahtar} cizim={<KapiIkon arac />} ad={ad} alt={alt}>
+                    <Fiyat etiket={ad} birim={birim} deger={a.aracKapi[anahtar]} onChange={(v) => d((x) => void (x.aracKapi[anahtar] = v))} />
+                  </Kalem>
+                ))}
+              </div>
+            </Bolum>
+
             <Bolum id="hizmet" ikon={CIZIM.nakliye}>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <Kalem cizim={CIZIM.montaj} ad="Montaj işçiliği" alt="Çit metresi başı">
                   <Fiyat etiket="Montaj işçiliği" deger={a.montajMetre} onChange={(v) => d((x) => void (x.montajMetre = v))} />
+                </Kalem>
+                <Kalem cizim={<ZeminIkon zemin="duvar" />} ad="Duvar üstü montaj" alt="Beton duvar üstüne kurulumda metre başı">
+                  <Fiyat etiket="Duvar üstü montaj" deger={a.montajDuvarMetre} onChange={(v) => d((x) => void (x.montajDuvarMetre = v))} />
                 </Kalem>
                 <Kalem cizim={CIZIM.temel} ad="Direk beton temeli" alt="Yalnızca toprak arazide">
                   <Fiyat etiket="Direk beton temeli" birim="₺/direk" deger={a.temelDirek} onChange={(v) => d((x) => void (x.temelDirek = v))} />
@@ -587,6 +651,7 @@ export function AyarPaneli({ kapat }: { kapat: () => void }) {
               Varsayılana dön
             </button>
           </div>
+          </AktifBolum.Provider>
         </div>
       </div>
     </div>

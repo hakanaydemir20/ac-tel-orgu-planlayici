@@ -5,7 +5,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTema } from "@/lib/tema";
 import * as THREE from "three";
 import type { Direk, Kosu, Nokta, Sonuc } from "@/lib/hesap";
-import { KAS_UZUNLUK, direkRengi, direkTipi, ustOlcu } from "@/lib/katalog";
+import { kasUzunlugu } from "@/lib/hesap";
+import { direkRengi, direkTipi, ustOlcu } from "@/lib/katalog";
 import { Tasarim, kenarHarfi, sekilNoktalari } from "@/lib/tasarim";
 import { disNormal, icinde } from "@/lib/geometri";
 import { sayiOku } from "@/lib/sayi";
@@ -144,7 +145,7 @@ function Direkler({
     if (hepsi) bitti.current = true;
   });
 
-  const kas = t.direk.kasli ? KAS_UZUNLUK : 0;
+  const kas = kasUzunlugu(t);
   const vKas = t.direk.kasTipi === "v";
   const kv = kasVektoru(t);
   const kasDy = kas * kv.dy;
@@ -152,7 +153,7 @@ function Direkler({
   const temelTabla = t.zemin === "toprak" && t.ekstra.temel; // toprakta dökülen beton temel görünür
   const tablaMalzeme = useMemo(() => new THREE.MeshStandardMaterial({ color: "#7f8489", roughness: 1, metalness: 0 }), []);
   useAt(tablaMalzeme);
-  const beton = t.zemin === "beton";
+  const beton = t.zemin !== "toprak"; // beton zemin ve duvar üstü: flanş + dübel
   const plakaMalzeme = useMemo(() => new THREE.MeshStandardMaterial({ color: "#8e98a6", metalness: 0.8, roughness: 0.35 }), []);
   const kapakMalzeme = useMemo(() => new THREE.MeshStandardMaterial({ color: "#1b2027", roughness: 0.7, metalness: 0.1 }), []);
   useAt(plakaMalzeme, kapakMalzeme);
@@ -169,6 +170,8 @@ function Direkler({
             <group
               ref={(el) => void (refler.current[i] = el)}
               position={[d.p[0], d.p[1], d.p[2]]}
+              // Direk gövdesi ve flanş plakası bulunduğu kenara paralel döner (kenar dış yönüne göre)
+              rotation={[0, -Math.atan2(n[1], n[0]), 0]}
               scale={[1, bitti.current ? 1 : 0.001, 1]}
             >
               <mesh geometry={g ? geoGuclu : geoAra} material={malzeme} position={[0, h / 2, 0]} castShadow receiveShadow />
@@ -178,7 +181,7 @@ function Direkler({
                   {boru ? <cylinderGeometry args={[k * 0.58, k * 0.58, 0.016, 16]} /> : <boxGeometry args={[k * 1.15, 0.016, k * 1.15]} />}
                 </mesh>
               )}
-              {/* Flanş yalnız beton zeminde */}
+              {/* Flanş yalnız beton zeminde ve duvar üstünde */}
               {beton && <Flans k={k} malzeme={malzeme} civata dubel={dubel.direk} />}
             </group>
             {temelTabla && (
@@ -188,6 +191,10 @@ function Direkler({
             )}
             {kas > 0 && (
               <Cubuk a={ust} b={new THREE.Vector3(ust.x + n[0] * kasDx, ust.y + kasDy, ust.z + n[1] * kasDx)} k={betonDirek ? k * 0.85 : k * 0.8} malzeme={malzeme} />
+            )}
+            {/* Profil + eğik kaş: tek köşe direğinden ikinci kenarın dışına ikinci kaş */}
+            {kas > 0 && d.dis2 && (
+              <Cubuk a={ust} b={new THREE.Vector3(ust.x + d.dis2[0] * kasDx, ust.y + kasDy, ust.z + d.dis2[1] * kasDx)} k={k * 0.8} malzeme={malzeme} />
             )}
             {/* V kaş: ikinci kol içe doğru */}
             {kas > 0 && vKas && (
@@ -352,6 +359,7 @@ function PanelCit({
   kalinlikMm,
   renk,
   poli,
+  direkK,
 }: {
   kosular: Kosu[];
   aralik: number;
@@ -360,6 +368,8 @@ function PanelCit({
   kalinlikMm: number;
   renk: string;
   poli: [number, number][] | null;
+  /** direk kesiti, m: panel direklerin dış yüzüne monte edilir */
+  direkK: number;
 }) {
   const { teller, kelepceler } = useMemo(() => {
     const teller: { p: THREE.Vector3; q: THREE.Quaternion; s: THREE.Vector3 }[] = [];
@@ -386,11 +396,13 @@ function PanelCit({
       const n = disNormal([(a.x + b.x) / 2, 0, (a.z + b.z) / 2], yon, poli);
       const dis = new THREE.Vector3(n[0], 0, n[1]);
       const adet = Math.max(1, Math.ceil(yatay / aralik - 1e-9));
-      const nokta = (t: number, y: number, z = 0) => a.clone().lerp(b, t).add(new THREE.Vector3(0, y, 0)).addScaledVector(dis, z);
+      // Panel arazinin dış tarafında, direklerin dış yüzüne yaslı (direk ekseninden yarım kesit + tel)
+      const disYuz = direkK / 2 + r + 0.004;
+      const nokta = (t: number, y: number, z = 0) => a.clone().lerp(b, t).add(new THREE.Vector3(0, y, 0)).addScaledVector(dis, disYuz + z);
       for (let j = 0; j < adet; j++) {
         const [t0, t1] = [j / adet, (j + 1) / adet];
         const genislik = (t1 - t0) * yatay;
-        const pay = 0.04 / yatay; // direk yanında boşluk
+        const pay = 0.012 / yatay; // komşu panelle arada küçük boşluk (direk önünden geçer)
         const [u0, u1] = [t0 + pay, t1 - pay];
         // Dikey teller (bombeli)
         const tel = Math.max(2, Math.round((genislik - 0.08) / (gozMm / 1000)) + 1);
@@ -410,10 +422,11 @@ function PanelCit({
         }
         // Yatay teller: alt, üst ve her bombenin iki yanı
         for (const y of [alt, h - 0.02, ...bombeler.flatMap((yb) => [yb - yari, yb + yari])]) parca(nokta(u0, y), nokta(u1, y));
-        // Kelepçeler: panelin iki ucunda, bombe hizalarında ve üstte
-        for (const t of [t0 + pay * 0.4, t1 - pay * 0.4])
-          for (const y of [...bombeler, h - 0.1]) {
-            const p = nokta(t, y);
+        // Plastik klipsler: her direğin dış yüzünde, panel yatay tellerini direğe tutturur
+        // (altta, bombe hizalarında ve üstte); iki panelin birleştiği yerde tek klips
+        for (const t of j === 0 ? [t0, t1] : [t1])
+          for (const y of [alt + 0.04, ...bombeler.map((yb) => yb + yari), h - 0.06]) {
+            const p = nokta(t, y, 0.008); // klips derinliğinin yarısı kadar dışta
             kelepceler.push({ p, q: new THREE.Euler(0, Math.atan2(yon[0], yon[1]), 0) });
           }
       }
@@ -429,34 +442,51 @@ function PanelCit({
       <Tekrarli
         key={`k${renk}`}
         yerler={kelepceler}
-        geometri={() => new THREE.BoxGeometry(0.03, 0.06, 0.075)}
-        malzeme={() => new THREE.MeshStandardMaterial({ color: renk, metalness: 0.4, roughness: 0.5 })}
+        // Plastik klips (ürün ölçüsü): 2,5 cm genişlik (çit boyunca) × 5 cm yükseklik × 2 cm derinlik, koyu yeşil
+        geometri={() => new THREE.BoxGeometry(0.02, 0.05, 0.025)}
+        malzeme={() => new THREE.MeshStandardMaterial({ color: "#1d3a2a", metalness: 0, roughness: 0.6 })}
       />
     </>
   );
 }
 
 /** Düzlemsel jiletli: çit düzleminde, iç içe geçen yassı halkalardan bir bant (baklava görünümü). */
-function Duzlemsel({ kosular, y }: { kosular: Kosu[]; y: number }) {
-  const R = 0.3;
+/**
+ * Düzlemsel jiletli tel: çit boyunca dizilmiş düz halkalar. Eğik kaşta halkalar kaş koluyla
+ * aynı açıda dışa yatar ve kola teğet oturur; aksi halde çitin tepesinde dik durur.
+ */
+function Duzlemsel({ kosular, y, egik, poli, cap, direkK }: { kosular: Kosu[]; y: number; egik: { dx: number; dy: number } | null; poli: [number, number][] | null; cap: number; direkK: number }) {
+  const R = cap / 200; // cm çap → m yarıçap
   const halkalar = useMemo(() => {
-    const out: { p: THREE.Vector3; q: THREE.Euler }[] = [];
+    const out: { p: THREE.Vector3; q: THREE.Quaternion }[] = [];
+    const m = new THREE.Matrix4();
     for (const k of kosular) {
       const a = V(k.a);
       const b = V(k.b);
-      // Halka düzlemi çitin doğrultusunu içersin (normal çite dik)
-      const aci = Math.atan2(b.x - a.x, b.z - a.z) + Math.PI / 2;
-      const n = Math.max(1, Math.round(a.distanceTo(b) / R));
-      for (let i = 0; i <= n; i++) {
-        const p = a.clone().lerp(b, i / n);
-        p.y += y + R;
-        out.push({ p, q: new THREE.Euler(0, aci, 0) });
+      const L = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+      const yon = new THREE.Vector3((b.x - a.x) / L, 0, (b.z - a.z) / L);
+      // Halka düzlemi: çit doğrultusu + yukarı (dik) ya da kaş kolu yönü (eğik, dışa)
+      const n = disNormal([(k.a[0] + k.b[0]) / 2, 0, (k.a[2] + k.b[2]) / 2], [yon.x, yon.z], poli);
+      const kol = egik ? new THREE.Vector3(n[0] * egik.dx, egik.dy, n[1] * egik.dx).normalize() : new THREE.Vector3(0, 1, 0);
+      const normal = new THREE.Vector3().crossVectors(yon, kol).normalize();
+      // Halka direğin (ve kaş kolunun) iç yüzüne yaslanır: direk ekseninden içe yarım direk kalınlığı kadar
+      const ice = normal.x * n[0] + normal.z * n[1] > 0 ? normal.clone().negate() : normal.clone();
+      const kaydir = direkK / 2 + 0.012;
+      const q = new THREE.Quaternion().setFromRotationMatrix(m.makeBasis(yon, kol, normal));
+      const adet = Math.max(1, Math.round(L / R));
+      for (let i = 0; i <= adet; i++) {
+        const p = a.clone().lerp(b, i / adet);
+        p.y += y;
+        p.addScaledVector(kol, R); // halka kola teğet: alt ucu direk tepesinde, kol boyunca uzanır
+        p.addScaledVector(ice, kaydir);
+        out.push({ p, q });
       }
     }
     return out;
-  }, [kosular, y]);
+  }, [kosular, y, egik, poli, R, direkK]);
   return (
     <Tekrarli
+      key={R} // çap değişince halka geometrisi yeniden kurulsun
       yerler={halkalar}
       geometri={() => new THREE.TorusGeometry(R, 0.007, 4, 36)}
       malzeme={() => new THREE.MeshStandardMaterial({ color: "#d4dbe4", metalness: 0.9, roughness: 0.25 })}
@@ -465,7 +495,8 @@ function Duzlemsel({ kosular, y }: { kosular: Kosu[]; y: number }) {
 }
 
 /** Jiletli spiral: çit boyunca dizilmiş eğik halkalar. */
-function Jiletli({ kosular, y }: { kosular: Kosu[]; y: number }) {
+function Jiletli({ kosular, y, cap }: { kosular: Kosu[]; y: number; cap: number }) {
+  const R = cap / 200; // cm çap → m yarıçap
   const halkalar = useMemo(() => {
     const out: { p: THREE.Vector3; q: THREE.Euler }[] = [];
     for (const k of kosular) {
@@ -475,16 +506,17 @@ function Jiletli({ kosular, y }: { kosular: Kosu[]; y: number }) {
       const n = Math.max(2, Math.floor(a.distanceTo(b) / 0.12));
       for (let i = 0; i <= n; i++) {
         const p = a.clone().lerp(b, i / n);
-        p.y += y + 0.25;
+        p.y += y + R;
         out.push({ p, q: new THREE.Euler(i % 2 ? 0.35 : -0.35, aci, 0, "YXZ") });
       }
     }
     return out;
-  }, [kosular, y]);
+  }, [kosular, y, R]);
   return (
     <Tekrarli
+      key={R}
       yerler={halkalar}
-      geometri={() => new THREE.TorusGeometry(0.25, 0.006, 4, 28)}
+      geometri={() => new THREE.TorusGeometry(R, 0.006, 4, 28)}
       malzeme={() => new THREE.MeshStandardMaterial({ color: "#c9d2dc", metalness: 0.9, roughness: 0.25 })}
     />
   );
@@ -598,6 +630,9 @@ export type GorunumTuru = "kose" | "genel" | "yon";
 type GorunumIstegi = { tur: GorunumTuru; n: number; yon?: Nokta3 };
 type Nokta3 = [number, number, number];
 
+const NORMAL_FOV = 42;
+const DAR_FOV = 14; // üstten plan bakışı
+
 function KameraRig({
   boyut,
   anahtar,
@@ -614,7 +649,7 @@ function KameraRig({
     camera: THREE.PerspectiveCamera;
     controls: { target: THREE.Vector3; update: () => void; addEventListener: (e: string, f: () => void) => void; removeEventListener: (e: string, f: () => void) => void } | null;
   };
-  const hedef = useRef<{ pos: THREE.Vector3; bak: THREE.Vector3 } | null>(null);
+  const hedef = useRef<{ pos: THREE.Vector3; bak: THREE.Vector3; fov: number } | null>(null);
   const ilk = useRef(true);
 
   useEffect(() => {
@@ -624,14 +659,18 @@ function KameraRig({
       // Küp: alanın merkezine bak, tüm alan ekrana sığacak uzaklıktan o yönden
       const yon = new THREE.Vector3(...gorunum.yon).normalize();
       yon.y = Math.max(yon.y, 0.02); // zeminin altına inme
-      if (Math.abs(yon.y) > 0.999) yon.z += 0.001; // tam tepeden bakışta yön belirsiz olmasın
-      const uzaklik = (S * 0.62) / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) + 3;
-      hedef.current = { pos: yon.normalize().multiplyScalar(uzaklik), bak: new THREE.Vector3(0, 0, 0) };
+      // Tam üstten: kenarlar eksenlere hizalı (kuzey yukarıda) ve dar açılı, uzaktan çekim;
+      // böylece çit duvarları yamuk görünmez, plan gibi düz durur
+      const ust = yon.y > 0.98;
+      if (ust) yon.set(0, 1, 0.0005);
+      const fov = ust ? DAR_FOV : NORMAL_FOV;
+      const uzaklik = (S * 0.62) / Math.tan(THREE.MathUtils.degToRad(fov / 2)) + 3;
+      hedef.current = { pos: yon.normalize().multiplyScalar(uzaklik), bak: new THREE.Vector3(0, 0, 0), fov };
     } else
       hedef.current =
         gorunum.tur === "kose" && kose
-          ? { pos: new THREE.Vector3(...kose.pos), bak: new THREE.Vector3(...kose.bak) }
-          : { pos: new THREE.Vector3(S * 0.45, S * 0.3 + 2.5, S * 0.7 + 3), bak: new THREE.Vector3(0, 0, 0) };
+          ? { pos: new THREE.Vector3(...kose.pos), bak: new THREE.Vector3(...kose.bak), fov: NORMAL_FOV }
+          : { pos: new THREE.Vector3(S * 0.45, S * 0.3 + 2.5, S * 0.7 + 3), bak: new THREE.Vector3(0, 0, 0), fov: NORMAL_FOV };
     if (ilk.current) {
       camera.position.set(S * 1.6, S * 1.8 + 30, S * 2.4);
       ilk.current = false;
@@ -649,11 +688,25 @@ function KameraRig({
     const h = hedef.current;
     if (!h) return;
     camera.position.lerp(h.pos, 1 - Math.exp(-dt * 2.4));
+    if (Math.abs(camera.fov - h.fov) > 0.01) {
+      camera.fov += (h.fov - camera.fov) * (1 - Math.exp(-dt * 3));
+      camera.updateProjectionMatrix();
+    }
     if (controls) {
       controls.target.lerp(h.bak, 1 - Math.exp(-dt * 3));
       controls.update();
     } else camera.lookAt(h.bak);
-    if (camera.position.distanceTo(h.pos) < 0.03 && (!controls || controls.target.distanceTo(h.bak) < 0.03)) hedef.current = null;
+    if (camera.position.distanceTo(h.pos) < 0.03 && (!controls || controls.target.distanceTo(h.bak) < 0.03)) {
+      // Son karede tam yerine otur (üstten bakış kayık kalmasın)
+      camera.position.copy(h.pos);
+      camera.fov = h.fov;
+      camera.updateProjectionMatrix();
+      if (controls) {
+        controls.target.copy(h.bak);
+        controls.update();
+      }
+      hedef.current = null;
+    }
   });
   return null;
 }
@@ -722,6 +775,43 @@ function DetayKamera({
   return null;
 }
 
+// ---------- beton duvar (duvar üstü montaj) ----------
+
+/** Çit hatları boyunca mevcut beton duvar; çit bunun üstüne oturur. */
+function BetonDuvar({ kosular, h }: { kosular: Kosu[]; h: number }) {
+  const malzeme = useMemo(() => {
+    const doku = betonDokusu().clone();
+    doku.needsUpdate = true;
+    return new THREE.MeshStandardMaterial({ map: doku, color: "#d9dde2", roughness: 0.95 });
+  }, []);
+  const kapak = useMemo(() => new THREE.MeshStandardMaterial({ color: "#aeb4bb", roughness: 0.9 }), []);
+  useAt(malzeme, kapak);
+  const K = 0.22; // duvar kalınlığı, m
+  return (
+    <>
+      {kosular.map((k, i) => {
+        const dx = k.b[0] - k.a[0];
+        const dz = k.b[2] - k.a[2];
+        const L = Math.hypot(dx, dz);
+        if (L < 0.01) return null;
+        const y0 = Math.min(k.a[1], k.b[1]);
+        const aci = -Math.atan2(dz, dx);
+        return (
+          <group key={i} position={[(k.a[0] + k.b[0]) / 2, y0, (k.a[2] + k.b[2]) / 2]} rotation={[0, aci, 0]}>
+            <mesh material={malzeme} position={[0, h / 2, 0]} castShadow receiveShadow>
+              <boxGeometry args={[L + K, h, K]} />
+            </mesh>
+            {/* Duvar başlığı: biraz taşkın üst kapak */}
+            <mesh material={kapak} position={[0, h + 0.02, 0]} castShadow receiveShadow>
+              <boxGeometry args={[L + K + 0.04, 0.04, K + 0.06]} />
+            </mesh>
+          </group>
+        );
+      })}
+    </>
+  );
+}
+
 // ---------- arsa ----------
 
 function Arsa({ poli, yukseklik, beton }: { poli: [number, number][]; yukseklik: (x: number, z: number) => number; beton: boolean }) {
@@ -754,6 +844,8 @@ export interface SahneProps {
   onHazir?: (png: string) => void;
   /** Kenar etiketine yazılan yeni ölçü (m) */
   onKenarOlcu?: (kenar: number, uzunluk: number) => void;
+  /** Elle çizilmiş arazide köşe sürüklenince yeni konumu (m, çizim koordinatı) */
+  onNoktaTasi?: (i: number, p: [number, number]) => void;
   /** Beton zeminde dübel adetleri (Ayarlar); yakın çekimde başları çizilir */
   dubel?: { direk: number; payanda: number };
   tasarim: Tasarim;
@@ -788,6 +880,76 @@ function EtiketYansit({ etiketler, domlar }: { etiketler: EtiketVeri[]; domlar: 
   return null;
 }
 
+/**
+ * Üstten bakışta elle çizilmiş arazinin köşe tutamaçları: sürükleyince köşe zeminde taşınır.
+ * Sürüklerken kamera döndürme kapanır; konum 10 cm'ye yuvarlanır.
+ */
+function KoseTutamaclari({
+  noktalar,
+  merkez,
+  r,
+  y,
+  basla,
+  bitir,
+  tasi,
+}: {
+  noktalar: [number, number][];
+  merkez: readonly [number, number];
+  r: number;
+  y: number;
+  basla: () => void;
+  bitir: () => void;
+  tasi: (i: number, p: [number, number]) => void;
+}) {
+  const { controls } = useThree() as unknown as { controls: { enabled: boolean } | null };
+  const [tutulan, setTutulan] = useState<number | null>(null);
+  const [ustunde, setUstunde] = useState<number | null>(null);
+  const zemin = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), -y), [y]);
+  const v = useMemo(() => new THREE.Vector3(), []);
+  useEffect(() => {
+    document.body.style.cursor = tutulan !== null ? "grabbing" : ustunde !== null ? "grab" : "";
+    return () => void (document.body.style.cursor = "");
+  }, [tutulan, ustunde]);
+
+  return (
+    <>
+      {noktalar.map((p, i) => (
+        <mesh
+          key={i}
+          position={[p[0], y, p[1]]}
+          renderOrder={10}
+          onPointerOver={(e) => (e.stopPropagation(), setUstunde(i))}
+          onPointerOut={() => setUstunde((u) => (u === i ? null : u))}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            (e.target as unknown as Element).setPointerCapture(e.pointerId);
+            if (controls) controls.enabled = false;
+            setTutulan(i);
+            basla();
+          }}
+          onPointerMove={(e) => {
+            if (tutulan !== i) return;
+            e.stopPropagation();
+            if (!e.ray.intersectPlane(zemin, v)) return;
+            const yuv = (n: number) => Math.round(n * 10) / 10;
+            tasi(i, [yuv(v.x + merkez[0]), yuv(v.z + merkez[1])]);
+          }}
+          onPointerUp={(e) => {
+            if (tutulan !== i) return;
+            (e.target as unknown as Element).releasePointerCapture(e.pointerId);
+            if (controls) controls.enabled = true;
+            setTutulan(null);
+            bitir();
+          }}
+        >
+          <cylinderGeometry args={[r, r, r * 0.4, 24]} />
+          <meshBasicMaterial color={tutulan === i ? "#ffffff" : ustunde === i ? "#ff6b6d" : "#ff2a2d"} toneMapped={false} fog={false} depthTest={false} transparent opacity={0.95} />
+        </mesh>
+      ))}
+    </>
+  );
+}
+
 function Icerik({
   tasarim: t,
   sonuc,
@@ -797,6 +959,7 @@ function Icerik({
   etiketBildir,
   etiketDom,
   gorunum = { tur: "kose", n: 0 },
+  onNoktaTasi,
 }: SahneProps & {
   etiketBildir?: (e: EtiketVeri[]) => void;
   etiketDom?: React.RefObject<Map<number, HTMLElement>>;
@@ -807,14 +970,28 @@ function Icerik({
   const { noktalar, kapali } = useMemo(() => sekilNoktalari(t), [t]);
   const poli = kapali ? noktalar : detay && noktalar.length >= 3 ? noktalar : null;
 
-  // Sahneyi merkeze al
-  const { merkez, boyut } = useMemo(() => {
+  // Sahneyi merkeze al (köşe sürüklenirken merkez ve kamera sabit kalır, yoksa sahne kayar)
+  const [sabit, setSabit] = useState<{ merkez: readonly [number, number]; boyut: number } | null>(null);
+  const hesaplanan = useMemo(() => {
     if (!noktalar.length) return { merkez: [0, 0] as const, boyut: 20 };
     const xs = noktalar.map((p) => p[0]);
     const zs = noktalar.map((p) => p[1]);
     const [x0, x1, z0, z1] = [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)];
     return { merkez: [(x0 + x1) / 2, (z0 + z1) / 2] as const, boyut: Math.max(x1 - x0, z1 - z0) };
   }, [noktalar]);
+  const { merkez, boyut } = sabit ?? hesaplanan;
+  const ustIstendi = gorunum.tur === "yon" && (gorunum.yon?.[1] ?? 0) / Math.hypot(...(gorunum.yon ?? [0, 1, 0])) > 0.98;
+  // Kullanıcı kamerayı döndürüp üst görünüşü bozunca köşe noktaları gizlenir (yeniden "Üst" seçilene dek)
+  const [ustBozuldu, setUstBozuldu] = useState(false);
+  useEffect(() => setUstBozuldu(false), [gorunum.n]);
+  const { controls: kontrol } = useThree() as unknown as { controls: { addEventListener: (e: string, f: () => void) => void; removeEventListener: (e: string, f: () => void) => void } | null };
+  useEffect(() => {
+    if (!kontrol || !ustIstendi) return;
+    const boz = () => setUstBozuldu(true);
+    kontrol.addEventListener("start", boz);
+    return () => kontrol.removeEventListener("start", boz);
+  }, [kontrol, ustIstendi]);
+  const ustten = ustIstendi && !ustBozuldu;
 
   const yukseklik = useMemo(() => {
     const ys = new Map(sonuc.kenarlar.map((k) => [`${k.bas[0].toFixed(3)},${k.bas[2].toFixed(3)}`, k.bas[1]]));
@@ -824,6 +1001,7 @@ function Icerik({
 
   const tip = t.tel.tip;
   const h = t.tel.yukseklik;
+  const duvarH = t.zemin === "duvar" ? t.duvarYukseklik : 0;
   const pvc = t.tel.kaplama === "pvc";
   const hucre = useMemo(() => hucreBoyu(tip, t.tel.goz), [tip, t.tel.goz]);
   const telMalzeme = useMemo(() => {
@@ -833,7 +1011,7 @@ function Icerik({
       color: pvc ? "#2f9a58" : "#e8eef5",
       emissive: pvc ? "#0d3a1f" : "#3a4656",
       transparent: true,
-      alphaTest: 0.02,
+      alphaTest: 0.15, // gözlerin arası boş kalsın (perde gibi dolmasın)
       side: THREE.DoubleSide,
       metalness: pvc ? 0.1 : 0.45,
       roughness: 0.3,
@@ -856,8 +1034,8 @@ function Icerik({
 
   // Üst tel hatları kaş kolu boyunca dizilir: eğik kaşta dışa doğru, düz kaşta dik
   const kvU = kasVektoru(t);
-  const kas = t.direk.kasli ? KAS_UZUNLUK * kvU.dy : 0; // dikey yükselme
-  const kasYatay = t.direk.kasli ? KAS_UZUNLUK * kvU.dx : 0;
+  const kas = kasUzunlugu(t) * kvU.dy; // dikey yükselme
+  const kasYatay = kasUzunlugu(t) * kvU.dx;
   const ustHatlar = useMemo(() => {
     if (t.ekstra.ustTel !== "dikenli") return [];
     const out: [THREE.Vector3, THREE.Vector3][] = [];
@@ -939,7 +1117,7 @@ function Icerik({
   return (
     <>
       <color attach="background" args={[detay ? "#e9eef5" : renk.gok]} />
-      {!detay && <fog attach="fog" args={[renk.gok, S * 2.2, S * 6]} />}
+      {!detay && !ustIstendi && <fog attach="fog" args={[renk.gok, S * 2.2, S * 6]} />}
       <hemisphereLight args={["#bcd4ff", "#0b1a2e", 0.9]} />
       {/* Dosya indirmeden yerel stüdyo ışığı: metaller parlasın */}
       <Environment resolution={256} frames={1}>
@@ -952,6 +1130,8 @@ function Icerik({
         intensity={2.2}
         castShadow
         shadow-mapSize={[2048, 2048]}
+        shadow-bias={-0.0004}
+        shadow-normalBias={0.03}
         shadow-camera-left={-S}
         shadow-camera-right={S}
         shadow-camera-top={S}
@@ -981,8 +1161,22 @@ function Icerik({
       />}
 
       <group position={[-merkez[0], 0, -merkez[1]]}>
+        {!detay && ustten && t.sekil === "serbest" && onNoktaTasi && (
+          <KoseTutamaclari
+            noktalar={t.serbest.noktalar}
+            merkez={merkez}
+            r={Math.max(0.4, boyut * 0.025)}
+            y={minY + 0.05}
+            basla={() => setSabit({ merkez, boyut })}
+            bitir={() => setSabit(null)}
+            tasi={onNoktaTasi}
+          />
+        )}
         {kapali && poli && <Arsa poli={poli} yukseklik={yukseklik} beton={t.zemin === "beton"} />}
 
+        {duvarH > 0 && <BetonDuvar kosular={sonuc.kosular} h={duvarH} />}
+        {/* Duvar üstü montajda çit duvarın tepesine oturur */}
+        <group position={[0, duvarH > 0 ? duvarH + 0.04 : 0, 0]}>
         {tip === "panel" ? (
           <PanelCit
             kosular={sonuc.kosular}
@@ -992,6 +1186,7 @@ function Icerik({
             kalinlikMm={t.tel.kalinlik}
             renk={pvc ? "#1d6b45" : "#c9d1db"}
             poli={poli}
+            direkK={kesit(t.direk.olcu)}
           />
         ) : (
           telMalzeme &&
@@ -1000,10 +1195,20 @@ function Icerik({
         {gergiSira.length > 0 && <YatayTeller kosular={sonuc.kosular} yukseklikler={gergiSira} renk={pvc ? "#2f9a58" : "#aeb8c4"} />}
         {anaDikenli.length > 0 && <DikenliTeller hatlar={anaDikenli} />}
         {ustHatlar.length > 0 && <DikenliTeller hatlar={ustHatlar} />}
-        {t.ekstra.ustTel === "jiletli" && tip !== "dikenli" && <Jiletli kosular={sonuc.kosular} y={h + 0.08 + kas * 0.5} />}
-        {t.ekstra.ustTel === "duzlemsel" && tip !== "dikenli" && <Duzlemsel kosular={sonuc.kosular} y={h + 0.08} />}
+        {t.ekstra.ustTel === "jiletli" && tip !== "dikenli" && <Jiletli kosular={sonuc.kosular} y={h + 0.08 + kas * 0.5} cap={t.ekstra.jiletliCap} />}
+        {t.ekstra.ustTel === "duzlemsel" && tip !== "dikenli" && (
+          <Duzlemsel
+            kosular={sonuc.kosular}
+            y={h + 0.08}
+            egik={t.direk.kasli && t.direk.kasTipi === "egik" ? kasVektoru(t) : null}
+            cap={t.ekstra.duzlemselCap}
+            direkK={kesit(t.direk.olcu)}
+            poli={poli}
+          />
+        )}
 
         <Direkler direkler={sonuc.direkler} t={t} poli={poli} baslangic={baslangic} animasyon={!detay} dubel={dubel} />
+        </group>
         <Kapilar kapilar={sonuc.kapilar} h={Math.max(1, h)} telMalzeme={kapiMalzeme} />
 
       </group>
@@ -1031,7 +1236,7 @@ export default function Sahne(props: SahneProps) {
         dpr={[1, 2]}
         frameloop={detay ? "never" : "always"}
         camera={{ fov: 42, near: 0.1, far: 5000, position: [40, 40, 60] }}
-        gl={{ preserveDrawingBuffer: true, antialias: true }}
+        gl={{ preserveDrawingBuffer: true, antialias: true, logarithmicDepthBuffer: true }}
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ACESFilmicToneMapping;
         }}
@@ -1079,6 +1284,15 @@ export default function Sahne(props: SahneProps) {
               {ad}
             </button>
           ))}
+          <button
+            type="button"
+            title={props.tasarim.sekil === "serbest" ? "Üstten plan görünüşü · köşeleri sürükleyerek araziyi şekillendirin" : "Üstten plan görünüşü"}
+            aria-label="Üstten görünüş"
+            onClick={() => gorunumSec("yon", [0, 1, 0])}
+            className={`cam rounded-lg px-2.5 py-1.5 text-xs font-bold transition hover:bg-[var(--yuzey-2)] ${gorunum.tur === "yon" && gorunum.yon?.[1] === 1 ? "ring-1 ring-ac-kirmizi" : ""}`}
+          >
+            Üst
+          </button>
         </div>
       )}
       {!detay && (

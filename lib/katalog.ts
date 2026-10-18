@@ -1,3 +1,4 @@
+import { type AracKapiFiyatlari, VARSAYILAN_ARAC_KAPI_FIYAT } from "./aracKapiFiyat";
 // Ürün kataloğu (ölçüler) ve varsayılan satış fiyatları.
 // Satışçı fiyatları Ayarlar penceresinden değiştirir; değişiklikler cihazda saklanır.
 
@@ -59,7 +60,7 @@ export const TEL_TIPLERI: TelTipi[] = [
     id: "panel",
     ad: "Panel Çit",
     aciklama: "Kaynaklı hazır panel",
-    yukseklikler: [1.03, 1.23, 1.53, 1.73, 2.03],
+    yukseklikler: [0.5, 0.75, 1, 1.2, 1.5, 2],
     gozler: [50, 55],
     kalinliklar: [4, 4.5, 5],
     kaplamalar: ["galvaniz", "pvc"],
@@ -143,8 +144,12 @@ export interface Ayarlar {
   kafesMetre: Record<string, Record<string, Record<string, number>>>;
   pvcFarkYuzde: number; // PVC kaplamada tel fiyatına eklenen %
   dikenliMetre: number; // ₺ / metre (tek sıra dikenli tel)
-  jiletliMetre: number; // ₺ / metre çit (jiletli spiral)
-  duzlemselMetre: number; // ₺ / metre çit (düzlemsel jiletli tel)
+  jiletliMetre: number; // eski kayıtlar için tek fiyat; artık çapa göre jiletliCapMetre
+  /** Helezon jiletli spiral ₺ / metre çit, çapa (cm) göre */
+  jiletliCapMetre: Record<string, number>;
+  duzlemselMetre: number; // eski kayıtlar için tek fiyat; artık çapa göre duzlemselCapMetre
+  /** Düzlemsel jiletli tel ₺ / metre çit, çapa (cm) göre */
+  duzlemselCapMetre: Record<string, number>;
   /** Direk tipi → ölçü → ₺ / metre direk boyu */
   direkMetre: Record<DirekTipiId, Record<string, number>>;
   boyaFarkYuzde: number; // boyalı (galvaniz dışı renk) profil/boru direkte metre fiyatına eklenen %
@@ -158,7 +163,10 @@ export interface Ayarlar {
   dubelPayanda: number; // beton zeminde payanda ayağı başına dübel sayısı
   kapiYaya: number; // ₺ / adet
   kapiArac: number; // ₺ / adet
+  /** Araç kapısı planlayıcı fiyatları */
+  aracKapi: AracKapiFiyatlari;
   montajMetre: number; // ₺ / m
+  montajDuvarMetre: number; // ₺ / m, beton duvar üstüne montaj (iskele, kırım, dübel delme)
   temelDirek: number; // ₺ / direk
   nakliyeSabit: number; // ₺
   nakliyeKm: number; // ₺ / km
@@ -199,14 +207,16 @@ export const VARSAYILAN_AYARLAR: Ayarlar = {
   satiscilar: ["Kaan", "Cengiz", "Ahmet", "Atilla"],
   telMetre: {
     kafes: KAFES_TEMEL, // eski kayıtlar için; kafes artık kafesMetre tablosundan fiyatlanır
-    panel: { "1.03": 220, "1.23": 260, "1.53": 320, "1.73": 365, "2.03": 425 },
+    panel: { "0.5": 120, "0.75": 160, "1": 220, "1.2": 260, "1.5": 320, "2": 425 },
     tavuk: { "0.5": 20, "1": 40, "1.5": 60, "2": 80 },
   },
   kafesMetre: kafesTablosu(KAFES_TEMEL),
   pvcFarkYuzde: 25,
   dikenliMetre: 6.5,
   jiletliMetre: 110,
+  jiletliCapMetre: { "30": 90, "45": 110, "60": 130, "90": 170 },
   duzlemselMetre: 140,
+  duzlemselCapMetre: { "30": 110, "45": 125, "60": 140, "90": 180 },
   direkMetre: {
     beton: { "10x10": 70, "12x12": 95, "15x15": 140 },
     profil: { "40x40": 85, "50x50": 115, "60x60": 150 },
@@ -223,7 +233,9 @@ export const VARSAYILAN_AYARLAR: Ayarlar = {
   dubelPayanda: 2,
   kapiYaya: 6500,
   kapiArac: 18000,
+  aracKapi: VARSAYILAN_ARAC_KAPI_FIYAT,
   montajMetre: 60,
+  montajDuvarMetre: 90,
   temelDirek: 120,
   nakliyeSabit: 1500,
   nakliyeKm: 25,

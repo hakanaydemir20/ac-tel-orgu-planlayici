@@ -14,6 +14,8 @@ export interface Direk {
   yon: [number, number];
   /** Çitin dış tarafı (xz birim vektör): eğik kaş ve üst teller bu yöne açılır. */
   dis: [number, number];
+  /** Tek köşe direğinde ikinci kenarın dış yönü: profil + eğik kaşta köşeden iki kaş çıkar. */
+  dis2?: [number, number];
   /** Payanda yönleri (xz düzleminde birim vektör, çite doğru). */
   payanda: [number, number][];
 }
@@ -82,15 +84,31 @@ function kenarKapilari(kapilar: Kapi[], kenar: Kenar) {
   return sonuc;
 }
 
+/** Profil direk + eğik kaş: köşe tek direk, üstünden her kenarın dışına birer kaş (iki kaş) çıkar. */
+export const ikiKasliKose = (t: Tasarim) =>
+  t.direk.tip === "profil" && t.direk.kasli && t.direk.kasTipi === "egik";
+
 /**
  * Köşeler çift direk mi: örgü (kafes) telde her zaman; panel çitte yalnızca eğik kaşlı direkte.
- * Diğer tel tiplerinde köşe tek direk.
+ * Profil direkte eğik kaş seçiliyse köşe tek direktir (iki kaşlı). Diğer tel tiplerinde köşe tek direk.
  */
 export const ciftKose = (t: Tasarim) =>
-  t.tel.tip === "kafes" || (t.tel.tip === "panel" && t.direk.kasli && t.direk.kasTipi === "egik");
+  !ikiKasliKose(t) &&
+  (t.tel.tip === "kafes" || (t.tel.tip === "panel" && t.direk.kasli && t.direk.kasTipi === "egik"));
 
 /** Panel çitte payanda yok; yalnızca eğik kaşlı direkte payanda kullanılır. */
-export const payandaVar = (t: Tasarim) => t.tel.tip !== "panel" || (t.direk.kasli && t.direk.kasTipi === "egik");
+/** Beton zemin ve duvar üstünde direk gömülmez: flanşlı demir direk dübelle sabitlenir. */
+/**
+ * Kaş kolu uzunluğu, m: düzlemsel jiletli tel takılınca kol halka çapı kadar uzar
+ * (halka kola boydan boya yaslanır); diğer durumlarda sabit KAS_UZUNLUK.
+ */
+export const kasUzunlugu = (t: Tasarim) =>
+  !t.direk.kasli ? 0 : t.ekstra.ustTel === "duzlemsel" && t.tel.tip !== "dikenli" ? t.ekstra.duzlemselCap / 100 : KAS_UZUNLUK;
+
+export const flansliZemin = (t: Pick<Tasarim, "zemin">) => t.zemin !== "toprak";
+
+// Duvar üstünde payandaya yer yok (duvar dar); direkler flanşla taşır
+export const payandaVar = (t: Tasarim) => t.zemin !== "duvar" && (t.tel.tip !== "panel" || (t.direk.kasli && t.direk.kasTipi === "egik"));
 
 export function yerlesim(t: Tasarim) {
   const kenarlar = kenarlariHesapla(t);
@@ -193,6 +211,15 @@ export function yerlesim(t: Tasarim) {
     } else d.rol = d.payanda.length ? "uc" : "kapi"; // payandasız köşe: iki yanı da kapı / boş
   }
 
+  // Tek köşe direğinde iki kaş: kaşlar iki kenarın dışına ayrı ayrı bakar
+  if (ikiKasliKose(t))
+    for (const d of koseler.values()) {
+      if (d.rol !== "kose") continue;
+      const [disA, disB] = koseDislari.get(d)!;
+      d.dis = disA;
+      d.dis2 = disB;
+    }
+
   // Çift köşe direği: ikinci direk ikinci kenar boyunca hemen yanına, payandalar ikisine birer tane
   if (ciftKose(t))
     for (const d of [...koseler.values()]) {
@@ -219,11 +246,11 @@ const yuvarla = (x: number, b = 2) => Math.round(x * 10 ** b) / 10 ** b;
 const tr = (x: number) => x.toLocaleString("tr-TR", { maximumFractionDigits: 2 });
 
 /** Toprağa gömülen kısım: beton zeminde direk gömülmez, ayak plakasına oturur. */
-export const gommePayi = (t: Tasarim) => (t.zemin === "beton" ? 0 : direkTipi(t.direk.tip).gomme);
+export const gommePayi = (t: Tasarim) => (flansliZemin(t) ? 0 : direkTipi(t.direk.tip).gomme);
 
 /** Sipariş edilecek direk boyu (25 cm'ye yukarı yuvarlanır): çit + gömme + kaş. */
 export const direkBoyu = (t: Tasarim) =>
-  Math.ceil((t.tel.yukseklik + gommePayi(t) + (t.direk.kasli ? KAS_UZUNLUK : 0)) * 4 - 1e-9) / 4;
+  Math.ceil((t.tel.yukseklik + gommePayi(t) + kasUzunlugu(t)) * 4 - 1e-9) / 4;
 
 /** Yükseklik anahtarı: 1.5 → "1.5" */
 export const yukseklikAnahtari = (h: number) => String(Math.round(h * 100) / 100);
@@ -296,7 +323,7 @@ export function hesapla(t: Tasarim, ay: Ayarlar = VARSAYILAN_AYARLAR): Sonuc {
   const gucluOlcu = ustOlcu(dt, anaOlcu);
   // Beton zeminde demir direk flanşlı: her direğin sabit bir temeli var (flanş + kaynak
   // işçiliği, boydan bağımsız); üstüne profilin/borunun boyu kadar metre fiyatı eklenir
-  const flansli = t.zemin === "beton";
+  const flansli = flansliZemin(t);
   const direkBirim = (olcu: string) => (flansli ? ay.flansAdet : 0) + boy * direkFiyat(olcu);
   const flansYazi = (flansli ? " flanşlı" : "") + (boyali ? ` ${direkRengi(t.direk.renk).ad.toLocaleLowerCase("tr")}` : "");
   const kasli = t.direk.kasli ? { egik: " eğik kaşlı", duz: " düz kaşlı", v: " V kaşlı" }[t.direk.kasTipi] : "";
@@ -315,6 +342,17 @@ export function hesapla(t: Tasarim, ay: Ayarlar = VARSAYILAN_AYARLAR): Sonuc {
     birim: "adet",
     birimFiyat: direkBirim(gucluOlcu),
   });
+  // Profil + eğik kaşta tek köşe direğine ikinci kaş kolu kaynak edilir
+  if (ikiKasliKose(t) && sayilar.kose > 0) {
+    const kol = kasUzunlugu(t);
+    ekle({
+      grup: "Direk",
+      ad: `Köşe direği ek kaş kolu (eğik) ${gucluOlcu} · ${tr(kol)} m`,
+      miktar: sayilar.kose,
+      birim: "adet",
+      birimFiyat: kol * direkFiyat(gucluOlcu),
+    });
+  }
   const payandaBoy = Math.ceil(h * 1.3 * 4) / 4;
   ekle({
     grup: "Direk",
@@ -360,8 +398,8 @@ export function hesapla(t: Tasarim, ay: Ayarlar = VARSAYILAN_AYARLAR): Sonuc {
     });
   }
 
-  // --- Beton zemine sabitleme: dübel (flanş ve kaynağı direk fiyatında) ---
-  if (t.zemin === "beton") {
+  // --- Beton zemine / duvara sabitleme: dübel (flanş ve kaynağı direk fiyatında) ---
+  if (flansliZemin(t)) {
     ekle({
       grup: "Bağlantı",
       ad: `Dübel (direk başına ${ay.dubelDirek}${ay.dubelPayanda ? `, payanda başına ${ay.dubelPayanda}` : ""})`,
@@ -386,18 +424,18 @@ export function hesapla(t: Tasarim, ay: Ayarlar = VARSAYILAN_AYARLAR): Sonuc {
   } else if (t.ekstra.ustTel === "jiletli") {
     ekle({
       grup: "Tel",
-      ad: `Jiletli spiral tel (${Math.ceil(telUzunluk / 10)} rulo)`,
+      ad: `Helezon jiletli tel Ø${t.ekstra.jiletliCap} cm (${Math.ceil(telUzunluk / 10)} rulo)`,
       miktar: metre,
       birim: "m",
-      birimFiyat: ay.jiletliMetre,
+      birimFiyat: ay.jiletliCapMetre?.[String(t.ekstra.jiletliCap)] ?? ay.jiletliMetre,
     });
   } else if (t.ekstra.ustTel === "duzlemsel") {
     ekle({
       grup: "Tel",
-      ad: `Düzlemsel jiletli tel (${Math.ceil((telUzunluk * 1.02) / 15)} rulo)`,
+      ad: `Düzlemsel jiletli tel Ø${t.ekstra.duzlemselCap} cm (${Math.ceil((telUzunluk * 1.02) / 15)} rulo)`,
       miktar: metre,
       birim: "m",
-      birimFiyat: ay.duzlemselMetre,
+      birimFiyat: ay.duzlemselCapMetre?.[String(t.ekstra.duzlemselCap)] ?? ay.duzlemselMetre,
     });
   }
 
@@ -419,7 +457,13 @@ export function hesapla(t: Tasarim, ay: Ayarlar = VARSAYILAN_AYARLAR): Sonuc {
   if (t.ekstra.temel && t.zemin === "toprak")
     ekle({ grup: "Hizmet", ad: "Direk beton temeli", miktar: direkler.length, birim: "adet", birimFiyat: ay.temelDirek });
   if (t.ekstra.montaj)
-    ekle({ grup: "Hizmet", ad: "Montaj işçiliği", miktar: Math.ceil(cevre - 1e-9), birim: "m", birimFiyat: ay.montajMetre });
+    ekle({
+      grup: "Hizmet",
+      ad: t.zemin === "duvar" ? `Duvar üstü montaj işçiliği (duvar ${tr(t.duvarYukseklik)} m)` : "Montaj işçiliği",
+      miktar: Math.ceil(cevre - 1e-9),
+      birim: "m",
+      birimFiyat: t.zemin === "duvar" ? ay.montajDuvarMetre : ay.montajMetre,
+    });
   if (t.ekstra.nakliye)
     ekle({
       grup: "Hizmet",

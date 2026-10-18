@@ -5,6 +5,8 @@ import { persist } from "zustand/middleware";
 import type { Kalem } from "./hesap";
 import type { FirmaBilgisi } from "./katalog";
 import type { Tasarim } from "./tasarim";
+import type { AracKapi } from "./aracKapi";
+import type { AracKapiDonuk } from "./aracKapiStore";
 
 /** Arşivdeki teklif: tasarım (donmuş fiyatlarıyla), kalem kalem tutarlar ve toplamlar. */
 export interface KayitliTeklif {
@@ -20,13 +22,18 @@ export interface KayitliTeklif {
   kdv?: number;
   kdvYuzde?: number;
   firma?: FirmaBilgisi;
+  /** Planlayıcı türü (yoksa çit) */
+  tur?: "cit" | "arac";
+  /** Araç kapısı teklifinde kapı tasarımı ve verildiği tarihteki fiyatları */
+  aracKapi?: AracKapi;
+  aracFiyat?: AracKapiDonuk;
   /** Aynı teklifin önceki halleri (en yeni önde) */
   gecmis?: Omit<KayitliTeklif, "gecmis">[];
 }
 
 const EN_FAZLA_REVIZYON = 20;
 const ozDegisti = (a: KayitliTeklif, b: KayitliTeklif) =>
-  a.toplam !== b.toplam || JSON.stringify({ ...a.tasarim, teklifNo: "" }) !== JSON.stringify({ ...b.tasarim, teklifNo: "" });
+  a.toplam !== b.toplam || JSON.stringify(a.aracKapi ?? null) !== JSON.stringify(b.aracKapi ?? null) || JSON.stringify({ ...a.tasarim, teklifNo: "" }) !== JSON.stringify({ ...b.tasarim, teklifNo: "" });
 
 const EN_FAZLA = 300;
 

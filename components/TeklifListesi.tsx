@@ -5,6 +5,10 @@ import { hesapla } from "@/lib/hesap";
 import { useTasarim } from "@/lib/store";
 import { type KayitliTeklif, useTeklifler } from "@/lib/teklifler";
 import { A4, teklifHtml } from "./pdf";
+import { aracKapiHtml } from "./aracKapiPdf";
+import { useAracKapi } from "@/lib/aracKapiStore";
+import { pdfIndir, yazdir as htmlYazdir } from "./TeklifYazdir";
+import { varlik } from "@/lib/yol";
 import { useTeklifCikti } from "./TeklifYazdir";
 import { sayi, tl } from "./ui";
 
@@ -79,9 +83,11 @@ export function TeklifListesi({ kapat }: { kapat: () => void }) {
                   <div className="truncate text-base font-bold">{k.musteri || "İsimsiz müşteri"}</div>
                   <div className="truncate text-sm text-[var(--metin-2)]">
                     {k.satisci && <>{k.satisci} · </>}
-                    {new Date(k.tarih).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" })} · {sayi(k.telUzunluk)} m
+                    {new Date(k.tarih).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" })} ·{" "}
+                    {k.tur === "arac" && k.aracKapi ? `${sayi(k.aracKapi.genislik)} × ${sayi(k.aracKapi.yukseklik)} m kapı` : `${sayi(k.telUzunluk)} m`}
                   </div>
                   <div className="truncate text-xs text-[var(--metin-2)]">
+                    {k.tur === "arac" ? "🚪 Araç kapısı · " : "Çit · "}
                     {k.no}
                     {!!k.gecmis?.length && <> · {k.gecmis.length} önceki revizyon</>}
                     {k.no === acikNo && <span className="font-bold text-red-200"> · ekranda</span>}
@@ -94,7 +100,19 @@ export function TeklifListesi({ kapat }: { kapat: () => void }) {
 
           {/* Detay: PDF önizleme + işlemler */}
           <section className={`min-h-0 flex-1 flex-col ${kayit ? "flex" : "hidden lg:flex"}`}>
-            {kayit ? (
+            {kayit?.tur === "arac" ? (
+              <KapiOnizleme
+                key={kayit.no}
+                k={kayit}
+                geri={() => setSecili(null)}
+                sil={() => {
+                  if (!confirm(`${kayit.musteri || kayit.no} teklifi silinsin mi?`)) return;
+                  sil(kayit.no);
+                  setSecili(null);
+                }}
+                kapat={kapat}
+              />
+            ) : kayit ? (
               <TeklifOnizleme
                 key={kayit.no}
                 k={kayit}
@@ -145,6 +163,8 @@ function TeklifOnizleme({ k, ekranda, geri, sil, kapat }: { k: KayitliTeklif; ek
       return;
     yukle(k.tasarim);
     kapat();
+    // Başka planlayıcıdan açıldıysa çit planlayıcıya geç
+    if (!location.pathname.includes("/cit")) location.href = varlik("/cit/");
   };
   const dugme = "rounded-xl px-4 py-3 text-sm font-extrabold uppercase tracking-wider transition disabled:opacity-60 sm:text-base";
 
@@ -192,6 +212,85 @@ function TeklifOnizleme({ k, ekranda, geri, sil, kapat }: { k: KayitliTeklif; ek
         </p>
       </div>
       {cikti.cizici}
+    </>
+  );
+}
+
+/** A4 sayfayı kutunun genişliğine sığdırarak gösterir. */
+function A4Onizleme({ html, baslik }: { html: string; baslik: string }) {
+  const kutu = useRef<HTMLDivElement>(null);
+  const [olcek, setOlcek] = useState(0.6);
+  useLayoutEffect(() => {
+    const el = kutu.current;
+    if (!el) return;
+    const ayarla = () => setOlcek(Math.min(1.2, (el.clientWidth - 32) / A4.w));
+    ayarla();
+    const g = new ResizeObserver(ayarla);
+    g.observe(el);
+    return () => g.disconnect();
+  }, []);
+  return (
+    <div ref={kutu} className="ince-kaydirma min-h-0 flex-1 overflow-auto bg-black/20 p-4">
+      <div className="mx-auto overflow-hidden rounded-sm bg-[#fff] shadow-2xl" style={{ width: A4.w * olcek, height: A4.h * olcek }}>
+        <iframe title={baslik} srcDoc={html} className="origin-top-left border-0" style={{ width: A4.w, height: A4.h, transform: `scale(${olcek})` }} />
+      </div>
+    </div>
+  );
+}
+
+/** Araç kapısı teklifinin önizlemesi: PDF, yazdır ve araç kapısı planlayıcıda açma. */
+function KapiOnizleme({ k, geri, sil, kapat }: { k: KayitliTeklif; geri: () => void; sil: () => void; kapat: () => void }) {
+  const guncel = useAyarlar((a) => a.ayarlar);
+  const ay = useMemo(() => ({ ...guncel, ...(k.firma && { firma: k.firma }) }), [k, guncel]);
+  const teklif = useMemo(
+    () => ({ teklifNo: k.no, musteri: k.tasarim.musteri, satisci: k.satisci ?? "", fiyatlar: k.aracFiyat ?? null }),
+    [k],
+  );
+  const html = useMemo(() => aracKapiHtml({ k: k.aracKapi!, t: teklif, ayarlar: ay, no: k.no, tarih: new Date(k.tarih), resim: null }), [k, teklif, ay]);
+  const [hazir, setHazir] = useState<"indir" | "yazdir" | null>(null);
+  const cikti = async (tur: "indir" | "yazdir") => {
+    setHazir(tur);
+    try {
+      if (tur === "indir") await pdfIndir(html, `AC-Tel-Orgu-Kapi-Teklif-${k.no.replace(/^AC-/, "")}.pdf`);
+      else await htmlYazdir(html);
+    } finally {
+      setHazir(null);
+    }
+  };
+  const ac = () => {
+    if (!confirm("Teklif araç kapısı planlayıcıda açılsın mı? Ekrandaki kapı tasarımının yerine geçer.")) return;
+    useAracKapi.getState().yukle(k.aracKapi!, teklif);
+    kapat();
+    if (!location.pathname.includes("/arac")) location.href = varlik("/arac/");
+  };
+  const dugme = "rounded-xl px-4 py-3 text-sm font-extrabold uppercase tracking-wider transition disabled:opacity-60 sm:text-base";
+  return (
+    <>
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-white/10 p-3 sm:px-5">
+        <button type="button" onClick={geri} className={`${dugme} bg-white/10 ring-1 ring-white/15 hover:bg-white/20 lg:hidden`}>
+          ← Liste
+        </button>
+        <div className="mr-auto min-w-0">
+          <div className="truncate text-lg font-extrabold">{k.musteri || "İsimsiz müşteri"}</div>
+          <div className="truncate text-sm text-[var(--metin-2)]">
+            🚪 Araç kapısı · {k.no}
+            {k.satisci && ` · Teklifi veren: ${k.satisci}`}
+          </div>
+        </div>
+        <button type="button" onClick={ac} className={`${dugme} bg-ac-mavi hover:brightness-110`}>
+          3D'de aç
+        </button>
+        <button type="button" onClick={() => cikti("indir")} disabled={!!hazir} className={`${dugme} bg-ac-kirmizi hover:bg-ac-kirmizi-acik`}>
+          {hazir === "indir" ? "Hazırlanıyor…" : "PDF indir"}
+        </button>
+        <button type="button" onClick={() => cikti("yazdir")} disabled={!!hazir} className={`${dugme} bg-white/10 ring-1 ring-white/15 hover:bg-white/20`}>
+          {hazir === "yazdir" ? "Hazırlanıyor…" : "Yazdır"}
+        </button>
+        <button type="button" onClick={sil} className={`${dugme} text-[var(--metin-2)] hover:bg-ac-kirmizi/25 hover:text-white`}>
+          Sil
+        </button>
+      </div>
+      <A4Onizleme html={html} baslik={`${k.no} kapı teklifi önizleme`} />
     </>
   );
 }

@@ -59,7 +59,7 @@ function sayfayaSigdir(d: Document) {
   if (gereken > sigan) ic.style.zoom = String(Math.floor((sigan / gereken) * 1000) / 1000);
 }
 
-async function yazdir(html: string) {
+export async function yazdir(html: string) {
   const { f, d } = await cerceveHazirla(html);
   sayfayaSigdir(d);
   await new Promise((r) => setTimeout(r, 100));
@@ -68,7 +68,7 @@ async function yazdir(html: string) {
 }
 
 /** Sayfayı görüntüye çevirip tek sayfalık A4 dikey PDF olarak indirir. */
-async function pdfIndir(html: string, dosyaAdi: string) {
+export async function pdfIndir(html: string, dosyaAdi: string) {
   const [{ jsPDF }, { default: html2canvas }] = await Promise.all([import("jspdf"), import("html2canvas")]);
   const { f, d } = await cerceveHazirla(html);
   try {

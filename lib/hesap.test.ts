@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { direkBoyu, hesapla } from "./hesap";
+import { direkBoyu, hesapla, yerlesim } from "./hesap";
 import { VARSAYILAN_AYARLAR } from "./katalog";
 import { icinde } from "./geometri";
 import { Tasarim, sekilNoktalari, varsayilanTasarim } from "./tasarim";
@@ -22,6 +22,24 @@ describe("direk yerleşimi", () => {
     expect(s.sayilar.ara).toBe(34);
     expect(s.sayilar.toplamDirek).toBe(44);
     expect(s.sayilar.payanda).toBe(8 + 4);
+  });
+
+  it("profil direk + eğik kaş: köşeler tek direk, her köşede iki kaş", () => {
+    const t = tasarim((t) => {
+      t.direk.tip = "profil";
+      t.direk.olcu = "50x50";
+      t.direk.kasli = true;
+      t.direk.kasTipi = "egik";
+    });
+    const s = hesapla(t);
+    expect(s.sayilar.kose).toBe(4); // kafes telde bile çift değil, tek
+    const koseler = yerlesim(t).direkler.filter((d) => d.rol === "kose");
+    expect(koseler).toHaveLength(4);
+    for (const d of koseler) {
+      expect(d.dis2).toBeDefined();
+      expect(Math.abs(d.dis[0] * d.dis2![0] + d.dis[1] * d.dis2![1])).toBeLessThan(0.01); // dik açılı iki kaş
+    }
+    expect(s.kalemler.some((k) => k.ad.startsWith("Köşe direği ek kaş kolu") && k.miktar === 4)).toBe(true);
   });
 
   it("4 m araç kapısı iki kapı direği ekler, teli kısaltır", () => {
@@ -141,7 +159,7 @@ describe("malzeme", () => {
   });
 
   it("panel çit adet hesabı", () => {
-    const s = hesapla(tasarim((t) => (t.tel.tip = "panel", t.tel.yukseklik = 1.53, t.tel.kalinlik = 4)));
+    const s = hesapla(tasarim((t) => (t.tel.tip = "panel", t.tel.yukseklik = 1.5, t.tel.kalinlik = 4)));
     expect(s.paket).toEqual({ adet: 40, birim: "panel" }); // 2×(30/2.5) + 2×(20/2.5)
     expect(s.kalemler.find((k) => k.grup === "Tel")!.birimFiyat).toBe(320);
   });
@@ -161,7 +179,60 @@ describe("arazi planı (PDF)", () => {
   });
 });
 
+describe("kapılar", () => {
+  it("araç ve yaya kapısı yan yana, ortak tek direkle", async () => {
+    const { kapiEkle } = await import("./tasarim");
+    const t = tasarim((x) => {
+      x.ekstra.kapilar = [];
+      kapiEkle(x, "arac");
+      kapiEkle(x, "yaya");
+    });
+    const [a, y] = t.ekstra.kapilar;
+    expect(a.kenar).toBe(y.kenar);
+    expect(y.konum).toBeCloseTo(a.konum + a.genislik); // bitişik
+    expect(a.konum).toBeCloseTo((30 - 5) / 2); // grup ortada
+    const kapiDirek = hesapla(t).direkler.filter((d) => d.rol === "kapi").length;
+    expect(kapiDirek).toBe(3); // sol, ortak, sağ
+  });
+});
+
+describe("düzlemsel jiletli", () => {
+  it("kaşlı direkte kaş boyu halka çapı kadar; direk boyu buna göre", () => {
+    const t = tasarim((t) => ((t.ekstra.ustTel = "duzlemsel"), (t.ekstra.duzlemselCap = 90), (t.direk.kasli = true)));
+    expect(direkBoyu(t)).toBe(3); // 1,5 + 0,5 gömme + 0,9 kaş → 2,9 → çeyrek metreye yuvarlı 3
+  });
+
+  it("helezon jiletli fiyatı da çapa göre", () => {
+    const k = hesapla(tasarim((t) => ((t.ekstra.ustTel = "jiletli"), (t.ekstra.jiletliCap = 90)))).kalemler.find((k) => k.ad.startsWith("Helezon"))!;
+    expect(k.birimFiyat).toBe(VARSAYILAN_AYARLAR.jiletliCapMetre["90"]);
+  });
+
+  it("fiyat seçilen çapa göre", () => {
+    for (const cap of [30, 45, 60, 90] as const) {
+      const k = hesapla(tasarim((t) => ((t.ekstra.ustTel = "duzlemsel"), (t.ekstra.duzlemselCap = cap)))).kalemler.find((k) => k.ad.startsWith("Düzlemsel"))!;
+      expect(k.birimFiyat).toBe(VARSAYILAN_AYARLAR.duzlemselCapMetre[String(cap)]);
+      expect(k.ad).toContain(`Ø${cap} cm`);
+    }
+  });
+});
+
 describe("kurulum alanı", () => {
+  it("duvar üstü: gömme yok, flanşlı direk + dübel, payanda yok, duvar montaj tarifesi", () => {
+    const t = tasarim((t) => {
+      t.zemin = "duvar";
+      t.duvarYukseklik = 0.8;
+      t.direk.tip = "profil";
+      t.direk.olcu = "40x40";
+    });
+    const s = hesapla(t);
+    expect(direkBoyu(t)).toBe(1.5);
+    expect(s.sayilar.payanda).toBe(0);
+    expect(s.kalemler.some((k) => k.ad.startsWith("Dübel"))).toBe(true);
+    expect(s.kalemler.some((k) => k.ad === "Direk beton temeli")).toBe(false);
+    const montaj = s.kalemler.find((k) => k.ad.startsWith("Duvar üstü montaj"))!;
+    expect(montaj.birimFiyat).toBe(VARSAYILAN_AYARLAR.montajDuvarMetre);
+  });
+
   it("toprakta direk 50 cm gömülür, beton temel kalemi var, flanş yok", () => {
     const t = tasarim(() => {});
     const s = hesapla(t);

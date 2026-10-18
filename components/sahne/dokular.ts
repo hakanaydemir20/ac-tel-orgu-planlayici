@@ -26,9 +26,6 @@ export function telDokusu(tip: TelTipiId, gozMm: number, kalinlikMm: number) {
   c.width = cw;
   c.height = ch;
   const x = c.getContext("2d")!;
-  // Hafif bir taban örtüsü: uzaktan bakınca tel tamamen kaybolmasın
-  x.fillStyle = "rgba(255,255,255,0.12)";
-  x.fillRect(0, 0, cw, ch);
   x.strokeStyle = "#fff";
   x.lineCap = "round";
   // Çizgi kalınlığı gerçek tel oranında, ama uzaktan kaybolmasın diye alt sınırlı
@@ -74,6 +71,8 @@ export function telDokusu(tip: TelTipiId, gozMm: number, kalinlikMm: number) {
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = 8;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.generateMipmaps = true;
   onbellek.set(anahtar, t);
   return t;
 }
