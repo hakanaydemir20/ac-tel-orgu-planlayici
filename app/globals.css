@@ -115,3 +115,18 @@ input[type="number"] {
 .yukari {
   animation: yukari 0.35s ease both;
 }
+
+/* Uydu haritasında kenar uzunluğu yazıları */
+.leaflet-tooltip.uydu-olcu {
+  background: rgb(6 20 46 / 0.85);
+  color: #fff;
+  border: 1px solid rgb(255 255 255 / 0.25);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-weight: 800;
+  font-size: 12px;
+  box-shadow: none;
+}
+.leaflet-tooltip.uydu-olcu::before {
+  display: none;
+}
