@@ -14,6 +14,10 @@ import { TeklifListesi } from "./TeklifListesi";
 import { TeklifPenceresi } from "./TeklifPenceresi";
 import { pdfIndir, yazdir as htmlYazdir } from "./TeklifYazdir";
 import { UstMenu } from "./UstMenu";
+import { UretimPenceresi } from "./UretimPenceresi";
+import { uretimHtml } from "./uretimPdf";
+import { goenyeDetayi, kapiOnGorunus, kapiUstGorunus } from "./kapiTeknik";
+import { kapiUretimi } from "@/lib/uretim";
 import { YeniTeklif } from "./YeniTeklif";
 import { DIREK_RENKLERI } from "@/lib/katalog";
 import { AyarPaneli } from "./AyarPaneli";
@@ -98,6 +102,7 @@ export function KapiPlanlayici({ aile: aileId }: { aile: KapiAilesi }) {
   const [liste, setListe] = useState(false);
   const [yeni, setYeni] = useState(false);
   const [sor, setSor] = useState(false);
+  const [uretim, setUretim] = useState(false);
   const [kaydedildi, setKaydedildi] = useState(false);
   const [hazirlanan, setHazirlanan] = useState<"yazdir" | "indir" | null>(null);
 
@@ -157,12 +162,13 @@ export function KapiPlanlayici({ aile: aileId }: { aile: KapiAilesi }) {
         kayitSayisi={kayitSayisi}
         yeni={() => setYeni(true)}
         ayarlar={() => setAyar(true)}
+        uretim={() => setUretim(true)}
       />
 
       <main className="flex min-h-0 flex-1 flex-col lg:flex-row">
         <div className="relative h-[46vh] shrink-0 lg:order-2 lg:h-auto lg:flex-1">
           <div id="arac-kapi-3d" className="h-full w-full">
-            <Sahne kapi={k} acik={acik} />
+            <Sahne kapi={k} acik={acik} yaya={aileId === "yaya"} />
           </div>
           {/* Fiyat */}
           <div className="pointer-events-none absolute inset-x-2 top-2 z-20 flex flex-wrap items-center gap-1.5 sm:inset-x-3 sm:top-3">
@@ -205,7 +211,7 @@ export function KapiPlanlayici({ aile: aileId }: { aile: KapiAilesi }) {
             ))}
           </div>
           {/* Aç / kapat */}
-          <div className="cam absolute bottom-3 left-3 z-20 flex items-center gap-3 rounded-xl px-3 py-2 text-xs font-bold">
+          <div className="cam absolute bottom-3 right-3 z-20 flex items-center gap-3 rounded-xl px-3 py-2 text-xs font-bold">
             <span>Kapalı</span>
             <input type="range" min={0} max={1} step={0.01} value={acik} onChange={(e) => setAcik(+e.target.value)} aria-label="Kapıyı aç / kapat" className="w-32 accent-[var(--color-ac-kirmizi)]" />
             <span>Açık</span>
@@ -280,6 +286,15 @@ export function KapiPlanlayici({ aile: aileId }: { aile: KapiAilesi }) {
             <div className="cam divide-y divide-white/5 rounded-xl px-3 py-1">
               {!arac && (
                 <>
+                  <div className="py-2.5">
+                    <div className="mb-1.5 text-sm font-semibold">Kolon montajı</div>
+                    <Secici
+                      degerler={["gomme", "flans"] as const}
+                      secili={k.montajTipi}
+                      bicim={(v) => (v === "flans" ? "Flanşlı (beton zemin)" : "Betona gömme")}
+                      onChange={(v) => guncelle((x) => void (x.montajTipi = v))}
+                    />
+                  </div>
                   <Anahtar acik={k.kilit} onChange={(v) => guncelle((x) => void (x.kilit = v))}>
                     Silindir kilit + kol
                   </Anahtar>
@@ -329,6 +344,17 @@ export function KapiPlanlayici({ aile: aileId }: { aile: KapiAilesi }) {
           baslat={(m, satisci) => sifirla(m, satisci)}
         />
       )}
+      {uretim &&
+        (() => {
+          const plan = kapiUretimi(k, aileId);
+          const html = uretimHtml({ plan, t: teklif, ayarlar, no: teklif.teklifNo || "Taslak", tarih: new Date(), cizimler: [
+              ["Ön görünüş · ölçülü (cm)", kapiOnGorunus(k, aileId)],
+              ["Üstten görünüş", kapiUstGorunus(k, aileId)],
+              ["Çerçeve köşesi · 45° gönye", goenyeDetayi(aileId)],
+            ],
+          });
+          return <UretimPenceresi plan={plan} html={html} dosyaAdi={`AC-Tel-Orgu-Uretim-${aile.kisa.replace(" ", "-")}-${teklif.teklifNo || "taslak"}.pdf`} kapat={() => setUretim(false)} />;
+        })()}
       {sor && <MusteriSor musteri={teklif.musteri} satisci={teklif.satisci} kaydet={kaydet} kapat={() => setSor(false)} />}
       {detay && (
         <TeklifPenceresi

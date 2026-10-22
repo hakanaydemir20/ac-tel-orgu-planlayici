@@ -27,6 +27,15 @@ export interface Kosu {
   uzunluk: number; // gerçek (eğimli) uzunluk
 }
 
+/** Kapı babası: kapının iki yanındaki kalın demir kolon (çit direği yerine geçer). */
+export interface KapiBabasi {
+  p: Nokta;
+  tur: "yaya" | "arac"; // iki kapı aynı babayı paylaşırsa büyük olan (araç)
+}
+
+/** Kapı babası boyu: yükseklik + gömme (toprakta 60 cm, betonda flanş) + kapı üstü payı, çeyrek metreye. */
+export const babaBoyu = (t: Tasarim) => Math.ceil((t.tel.yukseklik + 0.15 + (flansliZemin(t) ? 0 : 0.6)) * 4 - 1e-9) / 4;
+
 export interface KapiYeri {
   kapi: Kapi;
   a: Nokta;
@@ -47,6 +56,7 @@ export interface Sonuc {
   direkler: Direk[];
   kosular: Kosu[];
   kapilar: KapiYeri[];
+  babalar: KapiBabasi[];
   cevre: number; // toplam kenar (aktif) uzunluğu
   telUzunluk: number; // kapılar düşülmüş çit uzunluğu
   sayilar: Record<DirekRol, number> & { payanda: number; toplamDirek: number };
@@ -110,7 +120,7 @@ export const flansliZemin = (t: Pick<Tasarim, "zemin">) => t.zemin !== "toprak";
 // Duvar üstünde payandaya yer yok (duvar dar); direkler flanşla taşır
 export const payandaVar = (t: Tasarim) => t.zemin !== "duvar" && (t.tel.tip !== "panel" || (t.direk.kasli && t.direk.kasTipi === "egik"));
 
-export function yerlesim(t: Tasarim) {
+export function yerlesim(t: Tasarim, babaVar = true) {
   const kenarlar = kenarlariHesapla(t);
   const tip = telTipi(t.tel.tip);
   const aralik = Math.max(0.5, t.direk.aralik || tip.varsayilanAralik);
@@ -238,7 +248,21 @@ export function yerlesim(t: Tasarim) {
       if (d.rol === "gergi") d.rol = "ara";
     }
 
-  return { kenarlar, direkler, kosular, kapilar: kapiYerleri };
+  // Kapı babaları: kapı kenarlarındaki çit direklerinin yerine geçer (aynı noktadaki direkler kalkar)
+  const babalar: KapiBabasi[] = [];
+  if (babaVar) {
+    for (const g of kapiYerleri)
+      for (const p of [g.a, g.b]) {
+        const var_ = babalar.find((x) => Math.hypot(x.p[0] - p[0], x.p[2] - p[2]) < 0.06);
+        if (var_) {
+          if (g.kapi.tur === "arac") var_.tur = "arac";
+        } else babalar.push({ p, tur: g.kapi.tur });
+      }
+    const yakin = (d: Direk) => babalar.some((x) => Math.hypot(x.p[0] - d.p[0], x.p[2] - d.p[2]) < 0.06);
+    for (let i = direkler.length - 1; i >= 0; i--) if (yakin(direkler[i])) direkler.splice(i, 1);
+  }
+
+  return { kenarlar, direkler, kosular, kapilar: kapiYerleri, babalar };
 }
 
 const yuvarla = (x: number, b = 2) => Math.round(x * 10 ** b) / 10 ** b;
@@ -265,7 +289,7 @@ export function telMetreFiyati(t: Tasarim, h: number, ay: Ayarlar) {
 }
 
 export function hesapla(t: Tasarim, ay: Ayarlar = VARSAYILAN_AYARLAR): Sonuc {
-  const { kenarlar, direkler, kosular, kapilar } = yerlesim(t);
+  const { kenarlar, direkler, kosular, kapilar, babalar } = yerlesim(t, ay.kapiBabasi.etkin);
   const tip = telTipi(t.tel.tip);
   const dt = direkTipi(t.direk.tip);
   const h = t.tel.yukseklik;
@@ -286,9 +310,15 @@ export function hesapla(t: Tasarim, ay: Ayarlar = VARSAYILAN_AYARLAR): Sonuc {
   };
   const metre = Math.ceil(telUzunluk - 1e-9); // satış tam metre üzerinden
   const pvc = t.tel.kaplama === "pvc";
-  // Boyalı demir direkte (galvaniz dışı renk) profilin metresine boya farkı eklenir
   const boyali = dt.id !== "beton" && t.direk.renk !== "galvaniz";
-  const direkFiyat = (olcu: string) => (ay.direkMetre[dt.id]?.[olcu] ?? 0) * (boyali ? 1 + ay.boyaFarkYuzde / 100 : 1);
+  // Demir direk: boydan bağımsız sabit maliyet (kaynak, kapak, boya, nakliye…) + boy × metre.
+  // Eski (dondurulmuş) tekliflerde eski model: sabit yok, boya metre fiyatına % olarak.
+  const dd = ay.demirDirek;
+  const demir = dt.id !== "beton";
+  const eskiModel = !demir || dd.eskiModel;
+  const direkFiyat = (olcu: string) => (ay.direkMetre[dt.id]?.[olcu] ?? 0) * (demir && dd.eskiModel && boyali ? 1 + ay.boyaFarkYuzde / 100 : 1);
+  const direkSabit = eskiModel ? 0 : dd.kaynak + dd.kapak + dd.nakliye + dd.diger + (boyali ? dd.boya : 0);
+  const fiyatBoyu = (b: number) => (eskiModel ? b : Math.max(b, dd.asgariBoy));
 
   // --- Tel (₺ / metre) ---
   let paket: Sonuc["paket"];
@@ -324,7 +354,7 @@ export function hesapla(t: Tasarim, ay: Ayarlar = VARSAYILAN_AYARLAR): Sonuc {
   // Beton zeminde demir direk flanşlı: her direğin sabit bir temeli var (flanş + kaynak
   // işçiliği, boydan bağımsız); üstüne profilin/borunun boyu kadar metre fiyatı eklenir
   const flansli = flansliZemin(t);
-  const direkBirim = (olcu: string) => (flansli ? ay.flansAdet : 0) + boy * direkFiyat(olcu);
+  const direkBirim = (olcu: string) => (flansli ? ay.flansAdet : 0) + direkSabit + fiyatBoyu(boy) * direkFiyat(olcu);
   const flansYazi = (flansli ? " flanşlı" : "") + (boyali ? ` ${direkRengi(t.direk.renk).ad.toLocaleLowerCase("tr")}` : "");
   const kasli = t.direk.kasli ? { egik: " eğik kaşlı", duz: " düz kaşlı", v: " V kaşlı" }[t.direk.kasTipi] : "";
   ekle({
@@ -359,7 +389,7 @@ export function hesapla(t: Tasarim, ay: Ayarlar = VARSAYILAN_AYARLAR): Sonuc {
     ad: `Payanda ${anaOlcu}${boyali ? ` ${direkRengi(t.direk.renk).ad.toLocaleLowerCase("tr")}` : ""} · ${tr(payandaBoy)} m`,
     miktar: sayilar.payanda,
     birim: "adet",
-    birimFiyat: payandaBoy * direkFiyat(anaOlcu),
+    birimFiyat: (eskiModel ? 0 : dd.payandaSabit + (boyali ? dd.boya / 2 : 0)) + payandaBoy * direkFiyat(anaOlcu),
   });
 
   // --- Bağlantı elemanları ---
@@ -403,7 +433,7 @@ export function hesapla(t: Tasarim, ay: Ayarlar = VARSAYILAN_AYARLAR): Sonuc {
     ekle({
       grup: "Bağlantı",
       ad: `Dübel (direk başına ${ay.dubelDirek}${ay.dubelPayanda ? `, payanda başına ${ay.dubelPayanda}` : ""})`,
-      miktar: direkler.length * ay.dubelDirek + sayilar.payanda * ay.dubelPayanda,
+      miktar: (direkler.length + babalar.length) * ay.dubelDirek + sayilar.payanda * ay.dubelPayanda,
       birim: "adet",
       birimFiyat: ay.dubelAdet,
     });
@@ -451,6 +481,22 @@ export function hesapla(t: Tasarim, ay: Ayarlar = VARSAYILAN_AYARLAR): Sonuc {
       birimFiyat: tur === "yaya" ? ay.kapiYaya : ay.kapiArac,
     });
   }
+  // Kapı babaları: kalın demir kolon; demir direk sabit maliyeti (+ flanş) + boy × metre
+  const bBoy = babaBoyu(t);
+  const bBoyali = t.direk.tip !== "beton" && t.direk.renk !== "galvaniz";
+  const bSabit = dd.kaynak + dd.kapak + dd.nakliye + dd.diger + (bBoyali ? dd.boya : 0) + (flansli ? ay.flansAdet : 0);
+  for (const tur of ["arac", "yaya"] as const) {
+    const n = babalar.filter((x) => x.tur === tur).length;
+    if (!n) continue;
+    const olcu = tur === "arac" ? ay.kapiBabasi.aracOlcu : ay.kapiBabasi.yayaOlcu;
+    ekle({
+      grup: "Kapı",
+      ad: `${tur === "arac" ? "Araç" : "Yaya"} kapısı babası ${olcu}${flansli ? " flanşlı" : ""}${bBoyali ? ` ${direkRengi(t.direk.renk).ad.toLocaleLowerCase("tr")}` : ""} · ${tr(bBoy)} m`,
+      miktar: n,
+      birim: "adet",
+      birimFiyat: (dd.eskiModel ? 0 : bSabit) + Math.max(bBoy, dd.eskiModel ? 0 : dd.asgariBoy) * (ay.kapiBabasi.metre[olcu] ?? 0),
+    });
+  }
 
   // --- Hizmetler ---
   // Beton zeminde direk gömülmediği için temel yok; sabitleme Bağlantı grubunda
@@ -484,6 +530,7 @@ export function hesapla(t: Tasarim, ay: Ayarlar = VARSAYILAN_AYARLAR): Sonuc {
     direkler,
     kosular,
     kapilar,
+    babalar,
     cevre,
     telUzunluk,
     sayilar,

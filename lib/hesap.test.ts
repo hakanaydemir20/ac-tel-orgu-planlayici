@@ -42,16 +42,19 @@ describe("direk yerleşimi", () => {
     expect(s.kalemler.some((k) => k.ad.startsWith("Köşe direği ek kaş kolu") && k.miktar === 4)).toBe(true);
   });
 
-  it("4 m araç kapısı iki kapı direği ekler, teli kısaltır", () => {
+  it("4 m araç kapısı iki yanına kapı babası koyar, teli kısaltır", () => {
     const s = hesapla(
       tasarim((t) => (t.ekstra.kapilar = [{ id: "k", kenar: 0, konum: 13, tur: "arac", genislik: 4 }]))
     );
     expect(s.telUzunluk).toBe(96);
-    expect(s.sayilar.kapi).toBe(2);
+    expect(s.babalar.length).toBe(2); // kapı direkleri yerine kalın babalar
+    expect(s.sayilar.kapi).toBe(0);
     expect(s.sayilar.gergi).toBe(1); // kapılı kenarın parçaları 10 direğe ulaşmıyor
     expect(s.sayilar.ara).toBe(34);
-    expect(s.sayilar.toplamDirek).toBe(45);
-    expect(s.sayilar.payanda).toBe(8 + 2 + 2);
+    expect(s.sayilar.toplamDirek).toBe(43);
+    expect(s.sayilar.payanda).toBe(8 + 2);
+    const baba = s.kalemler.find((k) => k.ad.startsWith("Araç kapısı babası 80x80"))!;
+    expect(baba.miktar).toBe(2);
   });
 
   it("uzun kenarda 25 m'de bir gergi direği", () => {
@@ -102,10 +105,11 @@ describe("kapı köşeye dayalıyken", () => {
         t.ekstra.kapilar = [{ id: "k", kenar: 0, konum: 16, tur: "arac", genislik: 4 }];
       })
     );
-    const xler = s.direkler.map((d) => Math.round(d.p[0] * 100) / 100).sort((a, b) => a - b);
+    const xler = [...s.direkler, ...s.babalar].map((d) => Math.round(d.p[0] * 100) / 100).sort((a, b) => a - b);
     expect(xler).toContain(16);
     expect(xler).toContain(20); // eskiden eksikti
-    expect(s.sayilar.toplamDirek).toBe(9);
+    expect(s.babalar.length).toBe(2);
+    expect(s.sayilar.toplamDirek).toBe(7);
   });
 
   it("çitsiz kenarın yanındaki köşede kapı olunca köşe direği eksik kalmaz", () => {
@@ -115,7 +119,7 @@ describe("kapı köşeye dayalıyken", () => {
         t.ekstra.kapilar = [{ id: "k", kenar: 0, konum: 26, tur: "arac", genislik: 4 }]; // köşeye dayalı
       })
     );
-    expect(s.direkler.some((d) => Math.abs(d.p[0] - 30) < 1e-6 && Math.abs(d.p[2]) < 1e-6)).toBe(true);
+    expect([...s.direkler, ...s.babalar].some((d) => Math.abs(d.p[0] - 30) < 1e-6 && Math.abs(d.p[2]) < 1e-6)).toBe(true);
   });
 });
 
@@ -191,8 +195,9 @@ describe("kapılar", () => {
     expect(a.kenar).toBe(y.kenar);
     expect(y.konum).toBeCloseTo(a.konum + a.genislik); // bitişik
     expect(a.konum).toBeCloseTo((30 - 5) / 2); // grup ortada
-    const kapiDirek = hesapla(t).direkler.filter((d) => d.rol === "kapi").length;
-    expect(kapiDirek).toBe(3); // sol, ortak, sağ
+    const s = hesapla(t);
+    expect(s.babalar.length).toBe(3); // sol, ortak, sağ
+    expect(s.babalar.filter((b) => b.tur === "arac").length).toBe(2); // ortak baba araç ölçüsünde
   });
 });
 
@@ -213,6 +218,30 @@ describe("düzlemsel jiletli", () => {
       expect(k.birimFiyat).toBe(VARSAYILAN_AYARLAR.duzlemselCapMetre[String(cap)]);
       expect(k.ad).toContain(`Ø${cap} cm`);
     }
+  });
+});
+
+const DD = VARSAYILAN_AYARLAR.demirDirek;
+/** Galvaniz demir direğin boydan bağımsız sabit maliyeti (boya hariç) */
+const SABIT = DD.kaynak + DD.kapak + DD.nakliye + DD.diger;
+
+describe("demir direk sabit maliyeti", () => {
+  it("kısa direk asgari boyun altına inmez; payandada sabit kalem var", () => {
+    const s = hesapla(tasarim((t) => ((t.direk.tip = "profil"), (t.direk.olcu = "40x40"), (t.tel.yukseklik = 1), (t.direk.kasli = false))));
+    const m = VARSAYILAN_AYARLAR.direkMetre.profil["40x40"];
+    expect(direkBoyu(tasarim((t) => ((t.direk.tip = "profil"), (t.tel.yukseklik = 1), (t.direk.kasli = false))))).toBe(1.5);
+    expect(s.kalemler.find((k) => k.ad.startsWith("Ara direk"))!.birimFiyat).toBe(SABIT + Math.max(1.5, DD.asgariBoy) * m);
+    const p = s.kalemler.find((k) => k.ad.startsWith("Payanda"))!;
+    expect(p.birimFiyat).toBeGreaterThan(DD.payandaSabit);
+  });
+
+  it("eski (sabit maliyetten önce) teklif eski fiyatla kalır", async () => {
+    const { etkinAyarlar } = await import("./ayarlar");
+    const { demirDirek: _, ...eski } = structuredClone(VARSAYILAN_AYARLAR);
+    const t = tasarim((t) => ((t.direk.tip = "profil"), (t.direk.olcu = "40x40"), (t.direk.renk = "antrasit")));
+    t.fiyatlar = { tarih: "2026-01-01T00:00:00Z", ayarlar: eski as typeof VARSAYILAN_AYARLAR };
+    const ara = hesapla(t, etkinAyarlar(t, VARSAYILAN_AYARLAR)).kalemler.find((k) => k.ad.startsWith("Ara direk"))!;
+    expect(ara.birimFiyat).toBeCloseTo(2 * VARSAYILAN_AYARLAR.direkMetre.profil["40x40"] * (1 + VARSAYILAN_AYARLAR.boyaFarkYuzde / 100));
   });
 });
 
@@ -251,10 +280,10 @@ describe("kurulum alanı", () => {
     expect(direkBoyu(t)).toBe(1.5);
     expect(s.kalemler.some((k) => k.ad === "Direk beton temeli")).toBe(false);
     const dubel = s.kalemler.find((k) => k.ad.startsWith("Dübel"))!;
-    // Flanş ayrı satır değil: direk fiyatı = flanş + kaynak (sabit) + boy × metre fiyatı
+    // Flanş ayrı satır değil: direk fiyatı = flanş + sabit kalemler + boy × metre fiyatı
     const ara = s.kalemler.find((k) => k.ad.startsWith("Ara direk"))!;
     expect(ara.ad).toContain("flanşlı");
-    expect(ara.birimFiyat).toBe(VARSAYILAN_AYARLAR.flansAdet + 1.5 * VARSAYILAN_AYARLAR.direkMetre.profil["40x40"]);
+    expect(ara.birimFiyat).toBe(VARSAYILAN_AYARLAR.flansAdet + SABIT + 1.5 * VARSAYILAN_AYARLAR.direkMetre.profil["40x40"]);
     expect(dubel.miktar).toBe(s.sayilar.toplamDirek * 4 + s.sayilar.payanda * 2); // 40×4 + 8×2
     expect(dubel.tutar).toBe(dubel.miktar * VARSAYILAN_AYARLAR.dubelAdet);
   });
@@ -265,8 +294,9 @@ describe("kurulum alanı", () => {
         k.ad.startsWith("Ara direk"),
       )!.birimFiyat;
     const m = VARSAYILAN_AYARLAR.direkMetre.boru["Ø48"];
-    expect(fiyat(1)).toBe(VARSAYILAN_AYARLAR.flansAdet + 1 * m);
-    expect(fiyat(2) - fiyat(1)).toBeCloseTo(1 * m); // fark yalnız 1 m profil
+    // 1 m çit → 1 m direk, asgari 1,5 m'den fiyatlanır; 2 m çit → 2 m direk
+    expect(fiyat(1)).toBe(VARSAYILAN_AYARLAR.flansAdet + SABIT + 1.5 * m);
+    expect(fiyat(2) - fiyat(1)).toBeCloseTo(0.5 * m); // fark yalnız profil metresi
   });
 
   it("boyalı profil direkte metre fiyatına boya farkı eklenir, galvanizde eklenmez", () => {
@@ -275,9 +305,9 @@ describe("kurulum alanı", () => {
         k.ad.startsWith("Ara direk"),
       )!;
     const m = VARSAYILAN_AYARLAR.direkMetre.profil["40x40"];
-    expect(ara("galvaniz").birimFiyat).toBeCloseTo(2 * m);
+    expect(ara("galvaniz").birimFiyat).toBeCloseTo(SABIT + 2 * m);
     const boyali = ara("antrasit");
-    expect(boyali.birimFiyat).toBeCloseTo(2 * m * (1 + VARSAYILAN_AYARLAR.boyaFarkYuzde / 100));
+    expect(boyali.birimFiyat).toBeCloseTo(SABIT + VARSAYILAN_AYARLAR.demirDirek.boya + 2 * m); // boya sabit kalem
     expect(boyali.ad).toContain("antrasit");
   });
 

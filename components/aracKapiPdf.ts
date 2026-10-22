@@ -18,6 +18,7 @@ function ozellikler(k: AracKapi, alan: number, aile: KapiAilesi): [string, strin
       ? ([
           ["Kilit", k.kilit ? "Silindir kilit + kol" : "Yok"],
           ["Geçiş kontrolü", k.elektrikliKilit ? "Elektrikli kilit + kart okuyucu" : "Yok"],
+          ["Kolon montajı", k.montajTipi === "flans" ? "Flanşlı ayak, dübelle beton zemine" : "Betona gömme"],
         ] as [string, string][])
       : []),
   ];
@@ -31,7 +32,7 @@ function ozellikler(k: AracKapi, alan: number, aile: KapiAilesi): [string, strin
 }
 
 /** Kapı önden görünüş çizimi, ölçülü. */
-function kapiCizimi(k: AracKapi) {
+export function kapiCizimi(k: AracKapi) {
   const W = kanatBoyu(k);
   const sx = 300 / Math.max(W, 3);
   const h = k.yukseklik * sx;

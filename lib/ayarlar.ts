@@ -54,7 +54,14 @@ function kafesGecisi(a: Ayarlar, ham: unknown, katsayili: boolean): Ayarlar {
  */
 export function etkinAyarlar(t: Pick<Tasarim, "fiyatlar">, guncel: Ayarlar): Ayarlar {
   if (!t.fiyatlar) return guncel;
-  return { ...kafesGecisi(birlestir(VARSAYILAN_AYARLAR, t.fiyatlar.ayarlar), t.fiyatlar.ayarlar, false), firma: guncel.firma };
+  const ham = t.fiyatlar.ayarlar as unknown as Record<string, unknown>;
+  const a = kafesGecisi(birlestir(VARSAYILAN_AYARLAR, ham), ham, false);
+  // Demir direk sabit maliyetinden önce verilmiş teklif: eski modelle hesaplansın, tutarı değişmesin
+  if (!("demirDirek" in ham))
+    a.demirDirek = { kaynak: 0, kapak: 0, boya: 0, nakliye: 0, diger: 0, asgariBoy: 0, payandaSabit: 0, eskiModel: true };
+  // Kapı babasından önce verilmiş teklif: babasız (eski direklerle) hesaplansın
+  if (!("kapiBabasi" in ham)) a.kapiBabasi = { ...a.kapiBabasi, etkin: false };
+  return { ...a, firma: guncel.firma };
 }
 
 export function useEtkinAyarlar(t: Pick<Tasarim, "fiyatlar">) {

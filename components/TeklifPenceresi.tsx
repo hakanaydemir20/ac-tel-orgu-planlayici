@@ -196,7 +196,7 @@ export function TeklifPenceresi({
                 type="button"
                 onClick={kaydet}
                 disabled={bos}
-                className="col-span-2 rounded-xl bg-white/10 py-4 font-extrabold uppercase tracking-wider ring-1 ring-white/15 hover:bg-white/20 disabled:opacity-60"
+                className="col-span-2 rounded-xl bg-[#15803d] py-4 font-extrabold uppercase tracking-wider hover:bg-[#16a34a] disabled:opacity-60"
               >
                 {t.teklifNo ? "Kaydı güncelle" : "Teklifi kaydet"}
               </button>

@@ -125,6 +125,19 @@ export const DIREK_TIPLERI: DirekTipi[] = [
   },
 ];
 
+/** Demir direk sabit maliyet kalemleri (₺ / direk). */
+export interface DemirDirekMaliyet {
+  kaynak: number; // kaynak işçiliği (kapak, kaş, kulak/klips yuvası)
+  kapak: number; // tepe kapağı
+  boya: number; // elektrostatik boya (galvaniz dışı renk seçilince)
+  nakliye: number; // nakliye ve elleçleme payı
+  diger: number; // kesim, delik, ambalaj vb.
+  asgariBoy: number; // m: daha kısa direk bu boyun malzemesiyle fiyatlanır
+  payandaSabit: number; // ₺ / payanda: kesim + kaynak (boyalıysa üstüne boyanın yarısı)
+  /** Eski teklifler için: sabit kalemler yok, boya % ile (fiyatı değişmesin) */
+  eskiModel: boolean;
+}
+
 export interface FirmaBilgisi {
   ad: string;
   telefon: string;
@@ -152,17 +165,26 @@ export interface Ayarlar {
   duzlemselCapMetre: Record<string, number>;
   /** Direk tipi → ölçü → ₺ / metre direk boyu */
   direkMetre: Record<DirekTipiId, Record<string, number>>;
-  boyaFarkYuzde: number; // boyalı (galvaniz dışı renk) profil/boru direkte metre fiyatına eklenen %
+  boyaFarkYuzde: number; // eski model: boyalı demir direkte metre fiyatına eklenen % (yalnız eski teklifler)
+  /** Profil ve boru (demir) direğin boydan bağımsız sabit maliyeti; direk fiyatı = sabit + boy × metre */
+  demirDirek: DemirDirekMaliyet;
   gergiTeliMetre: number; // ₺ / m
   gergiDemiri: number; // ₺ / adet
   kelepce: number; // ₺ / adet
   bagTeliKg: number; // ₺ / kg
-  flansAdet: number; // ₺ / direk, beton zeminde demir direğin sabit temeli: flanş + kaynak işçiliği (boydan bağımsız)
+  flansAdet: number; // ₺ / direk, beton zemin ve duvar üstünde demir direğin flanşı (ayak plakası)
   dubelAdet: number; // ₺ / adet, beton zeminde dübel
   dubelDirek: number; // beton zeminde direk başına dübel sayısı
   dubelPayanda: number; // beton zeminde payanda ayağı başına dübel sayısı
   kapiYaya: number; // ₺ / adet
   kapiArac: number; // ₺ / adet
+  /** Çitteki kapıların babaları (kapı kolonları): ölçü ve metre fiyatı */
+  kapiBabasi: {
+    etkin: boolean; // eski tekliflerde kapalı (fiyatları değişmesin)
+    yayaOlcu: string; // yaya kapısı babası, ör. "60x60"
+    aracOlcu: string; // araç kapısı babası, ör. "80x80"
+    metre: Record<string, number>; // ölçü → ₺ / m (demir direk sabit maliyeti ayrıca eklenir)
+  };
   /** Araç kapısı planlayıcı fiyatları */
   aracKapi: AracKapiFiyatlari;
   /** Yaya kapısı planlayıcı fiyatları */
@@ -225,6 +247,7 @@ export const VARSAYILAN_AYARLAR: Ayarlar = {
     boru: { Ø42: 80, Ø48: 100, Ø60: 135 },
   },
   boyaFarkYuzde: 15,
+  demirDirek: { kaynak: 60, kapak: 15, boya: 90, nakliye: 25, diger: 0, asgariBoy: 1.5, payandaSabit: 40, eskiModel: false },
   gergiTeliMetre: 4,
   gergiDemiri: 35,
   kelepce: 8,
@@ -235,6 +258,7 @@ export const VARSAYILAN_AYARLAR: Ayarlar = {
   dubelPayanda: 2,
   kapiYaya: 6500,
   kapiArac: 18000,
+  kapiBabasi: { etkin: true, yayaOlcu: "60x60", aracOlcu: "80x80", metre: { "60x60": 160, "80x80": 230, "100x100": 320 } },
   aracKapi: VARSAYILAN_ARAC_KAPI_FIYAT,
   yayaKapi: VARSAYILAN_YAYA_KAPI_FIYAT,
   montajMetre: 60,

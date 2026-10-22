@@ -14,6 +14,12 @@ import { FiyatOzeti } from "./FiyatOzeti";
 import { teklifiKaydet, useTeklifCikti } from "./TeklifYazdir";
 import { MusteriSor } from "./MusteriSor";
 import { UstMenu } from "./UstMenu";
+import { UretimPenceresi } from "./UretimPenceresi";
+import { uretimHtml } from "./uretimPdf";
+import { telCizimi } from "./pdf";
+import { citUretimi } from "@/lib/uretim";
+import { direkTeknikResim } from "./citTeknik";
+import { planSvg } from "@/lib/plan";
 import { SoruCevap } from "./SoruCevap";
 import type { Musteri } from "@/lib/tasarim";
 
@@ -39,6 +45,7 @@ export function Tasarimci() {
   const cikti = useTeklifCikti(tasarim, sonuc);
   const [sor, setSor] = useState(false);
   const [sihirbaz, setSihirbaz] = useState(false);
+  const [uretim, setUretim] = useState(false);
   const [kaydedildi, setKaydedildi] = useState(false);
 
   // Müşteri adı yoksa önce onu sorar; varsa doğrudan arşive kaydeder
@@ -88,6 +95,7 @@ export function Tasarimci() {
         kayitSayisi={kayitSayisi}
         yeni={() => setYeni(true)}
         ayarlar={() => setAyar(true)}
+        uretim={() => setUretim(true)}
       />
 
       <main className="flex min-h-0 flex-1 flex-col lg:flex-row">
@@ -127,6 +135,23 @@ export function Tasarimci() {
       {liste && <TeklifListesi kapat={() => setListe(false)} />}
       {yeni && <YeniTeklif kapat={() => setYeni(false)} />}
       {sihirbaz && <SoruCevap kapat={() => setSihirbaz(false)} />}
+      {uretim &&
+        (() => {
+          const plan = citUretimi(tasarim, sonuc, ayarlar);
+          const html = uretimHtml({
+            plan,
+            t: tasarim,
+            ayarlar,
+            no: tasarim.teklifNo || "Taslak",
+            tarih: new Date(),
+            cizimler: [
+              ["Direk teknik resmi · yan görünüş, Detay A, Kesit B-B", direkTeknikResim(tasarim)],
+              ["Arazi planı", planSvg(tasarim, sonuc)],
+              ["Tel", telCizimi(tasarim)],
+            ],
+          });
+          return <UretimPenceresi plan={plan} html={html} dosyaAdi={`AC-Tel-Orgu-Uretim-${tasarim.teklifNo || "taslak"}.pdf`} kapat={() => setUretim(false)} />;
+        })()}
       {sor && <MusteriSor musteri={tasarim.musteri} satisci={tasarim.satisci} kaydet={kaydet} kapat={() => setSor(false)} />}
     </div>
   );

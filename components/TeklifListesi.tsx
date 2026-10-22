@@ -218,7 +218,7 @@ function TeklifOnizleme({ k, ekranda, geri, sil, kapat }: { k: KayitliTeklif; ek
 }
 
 /** A4 sayfayı kutunun genişliğine sığdırarak gösterir. */
-function A4Onizleme({ html, baslik }: { html: string; baslik: string }) {
+export function A4Onizleme({ html, baslik }: { html: string; baslik: string }) {
   const kutu = useRef<HTMLDivElement>(null);
   const [olcek, setOlcek] = useState(0.6);
   useLayoutEffect(() => {

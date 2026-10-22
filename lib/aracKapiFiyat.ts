@@ -13,6 +13,8 @@ export interface AracKapiFiyatlari {
   mizrakMetre: number; // kanat üstü mızrak uç, ₺ / m
   kilit: number; // silindir kilit + kol, ₺ / takım
   elektrikliKilit: number; // elektrikli kilit + kart okuyucu, ₺ / takım
+  gommeKolon: number; // kolonun betona gömülmesi (temel çukuru + beton), ₺ / kolon
+  flansKolon: number; // kolona flanş ayak + dübel, ₺ / kolon
 }
 
 export const VARSAYILAN_ARAC_KAPI_FIYAT: AracKapiFiyatlari = {
@@ -31,6 +33,8 @@ export const VARSAYILAN_ARAC_KAPI_FIYAT: AracKapiFiyatlari = {
   mizrakMetre: 650,
   kilit: 1200,
   elektrikliKilit: 5500,
+  gommeKolon: 600,
+  flansKolon: 450,
 };
 
 /** Yaya kapısı fiyatları: aynı tablo biçimi, yalnız tek/çift kanat ve kilitler kullanılır. */
@@ -50,5 +54,7 @@ export const VARSAYILAN_YAYA_KAPI_FIYAT: AracKapiFiyatlari = {
   mizrakMetre: 650,
   kilit: 1200,
   elektrikliKilit: 5500,
+  gommeKolon: 600,
+  flansKolon: 450,
 };
 

@@ -58,7 +58,7 @@ body {
   box-shadow: 0 1px 2px rgb(11 35 80 / 0.06), 0 6px 20px -12px rgb(11 35 80 / 0.25);
 }
 /* Renkli dolgulu düğmelerde yazı her temada beyaz kalsın */
-:root[data-tema="acik"] :is(.bg-ac-kirmizi, .bg-ac-lacivert, .bg-\[\#1fa855\], .bg-\[\#081a38\]) {
+:root[data-tema="acik"] :is(.bg-ac-kirmizi, .bg-ac-lacivert, .bg-\[\#1fa855\], .bg-\[\#15803d\], .bg-\[\#081a38\]) {
   --color-white: #fff;
   color: #fff;
 }

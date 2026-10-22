@@ -70,7 +70,7 @@ export function MusteriSor({
             <button type="button" onClick={kapat} className="rounded-xl bg-white/10 px-4 py-3 text-sm font-bold ring-1 ring-white/15 hover:bg-white/20">
               Vazgeç
             </button>
-            <button type="submit" className="rounded-xl bg-ac-kirmizi py-3 font-extrabold uppercase tracking-wider hover:bg-ac-kirmizi-acik">
+            <button type="submit" className="rounded-xl bg-[#15803d] py-3 font-extrabold uppercase tracking-wider hover:bg-[#16a34a]">
               Kaydet
             </button>
           </div>

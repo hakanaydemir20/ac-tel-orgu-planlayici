@@ -302,12 +302,72 @@ function KafesFiyatlari({ a, d }: { a: Ayarlar; d: (f: (x: Ayarlar) => void) => 
   );
 }
 
+/**
+ * Demir (profil / boru) direk maliyeti: boydan bağımsız sabit kalemler + boy × metre fiyatı.
+ * Örnek hesap canlı gösterilir; kısa direk asgari boyun altında fiyatlanmaz.
+ */
+function DemirDirekMaliyeti({ a, d }: { a: Ayarlar; d: (f: (x: Ayarlar) => void) => void }) {
+  const m = a.demirDirek;
+  const kalemler = [
+    ["kaynak", "Kaynak işçiliği", "Kapak, kaş, klips yuvası kaynakları"],
+    ["kapak", "Tepe kapağı", "Direk başına"],
+    ["boya", "Boya", "Galvaniz dışı renkte (payandada yarısı)"],
+    ["nakliye", "Nakliye / elleçleme", "Direk başına pay"],
+    ["diger", "Diğer", "Kesim, delik, ambalaj vb."],
+    ["payandaSabit", "Payanda sabit", "Kesim + kaynak, payanda başına"],
+  ] as const;
+  const sabit = m.kaynak + m.kapak + m.nakliye + m.diger;
+  const olcu = DIREK_TIPLERI.find((x) => x.id === "profil")!.olculer[1] ?? "50x50";
+  const metre = a.direkMetre.profil[olcu] ?? 0;
+  const ornekBoy = 2.25;
+  return (
+    <div className="cam space-y-4 rounded-2xl p-4 md:p-5">
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="h-20 w-24 shrink-0 rounded-xl bg-ac-mavi/10 p-2 text-sky-200 ring-1 ring-ac-mavi/30">
+          <DirekIkon tip="profil" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-lg font-extrabold">Demir direk maliyeti (profil ve boru)</div>
+          <div className="text-sm text-[var(--metin-2)]">
+            Direk fiyatı = sabit kalemler + boy × metre fiyatı. Direk ne kadar kısa olursa olsun sabit kalemlerin ve asgari boyun altına inilmez.
+          </div>
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {kalemler.map(([anahtar, ad, alt]) => (
+          <OlcuFiyat key={anahtar} ust={ad} alt={alt}>
+            <Fiyat etiket={ad} birim={anahtar === "payandaSabit" ? "₺/payanda" : "₺/direk"} deger={m[anahtar]} onChange={(v) => d((x) => void (x.demirDirek[anahtar] = v))} />
+          </OlcuFiyat>
+        ))}
+        <OlcuFiyat ust="Asgari fiyat boyu" alt="Daha kısa direk bu boyun malzemesiyle fiyatlanır">
+          <Fiyat etiket="Asgari fiyat boyu" birim="m" deger={m.asgariBoy} onChange={(v) => d((x) => void (x.demirDirek.asgariBoy = v))} />
+        </OlcuFiyat>
+      </div>
+      <div className="rounded-xl bg-white/5 p-3 text-sm ring-1 ring-white/10">
+        <div className="mb-1 font-bold">Örnek: Profil {olcu}, {sayi(ornekBoy, 2)} m direk</div>
+        <div className="grid gap-x-6 gap-y-0.5 tabular-nums sm:grid-cols-2">
+          <span className="text-[var(--metin-2)]">Sabit (galvaniz, toprakta)</span>
+          <span>{tl(sabit)}</span>
+          <span className="text-[var(--metin-2)]">Malzeme {sayi(Math.max(ornekBoy, m.asgariBoy), 2)} m × {tl(metre)}</span>
+          <span>{tl(Math.max(ornekBoy, m.asgariBoy) * metre)}</span>
+          <span className="text-[var(--metin-2)]">+ boyalı renk / + flanş (beton zemin)</span>
+          <span>
+            +{tl(m.boya)} / +{tl(a.flansAdet)}
+          </span>
+          <span className="font-bold">Galvaniz, toprakta direk</span>
+          <span className="font-bold">{tl(sabit + Math.max(ornekBoy, m.asgariBoy) * metre)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------- bölümler ----------
 
 const BOLUMLER = [
   { id: "firma", ad: "Firma", aciklama: "Teklifin altında görünen bilgiler" },
   { id: "tel", ad: "Tel fiyatları", aciklama: "Metretül fiyatı · yükseklik, göz ve kalınlığa göre" },
-  { id: "direk", ad: "Direk fiyatları", aciklama: "Direk boyunun metresi başı" },
+  { id: "direk", ad: "Direk fiyatları", aciklama: "Metre fiyatı ve demir direk sabit maliyeti" },
   { id: "beton", ad: "Beton zemin", aciklama: "Flanşlı demir direk ve dübel" },
   { id: "baglanti", ad: "Bağlantı", aciklama: "Gergi, kelepçe, bağ teli" },
   { id: "kapi", ad: "Kapılar", aciklama: "Çitteki kapılar, adet fiyatı" },
@@ -506,18 +566,22 @@ export function AyarPaneli({ kapat, ilkBolum = "firma" }: { kapat: () => void; i
                     const f = a.direkMetre[dt.id][o] ?? 0;
                     const boy = ornekBoy(dt.gomme);
                     return (
-                      <OlcuFiyat key={o} ust={o} alt={`${sayi(boy, 2)} m direk ≈ ${tl(f * boy)}`}>
+                      <OlcuFiyat
+                        key={o}
+                        ust={o}
+                        alt={`${sayi(boy, 2)} m direk ≈ ${tl(
+                          dt.id === "beton"
+                            ? f * boy
+                            : a.demirDirek.kaynak + a.demirDirek.kapak + a.demirDirek.nakliye + a.demirDirek.diger + f * Math.max(boy, a.demirDirek.asgariBoy),
+                        )}${dt.id === "beton" ? "" : " (sabit dahil)"}`}
+                      >
                         <Fiyat etiket={`${dt.ad} ${o}`} deger={f} onChange={(v) => d((x) => void (x.direkMetre[dt.id][o] = v))} />
                       </OlcuFiyat>
                     );
                   })}
                 </UrunKarti>
               ))}
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <Kalem cizim={CIZIM.pvc} ad="Boyalı direk farkı" alt="Profil/boru yeşil, antrasit, siyah, beyaz: metre fiyatına eklenir">
-                  <Fiyat etiket="Boyalı direk farkı" birim="%" deger={a.boyaFarkYuzde} onChange={(v) => d((x) => void (x.boyaFarkYuzde = v))} />
-                </Kalem>
-              </div>
+              <DemirDirekMaliyeti a={a} d={d} />
               <p className="rounded-xl bg-ac-mavi/10 p-3 text-sm text-sky-100 ring-1 ring-ac-mavi/30">
                 Direk boyu = çit yüksekliği + gömme payı (toprakta; betonda gömme yok) + kaşlıysa {sayi(KAS_UZUNLUK * 100, 0)} cm. Köşe ve gergi direkleri bir
                 üst ölçüden hesaplanır.
@@ -526,8 +590,8 @@ export function AyarPaneli({ kapat, ilkBolum = "firma" }: { kapat: () => void; i
 
             <Bolum id="beton" ikon={<ZeminIkon zemin="beton" />}>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <Kalem cizim={CIZIM.flans} ad="Flanş + kaynak işçiliği" alt="Direk başı sabit. Direk fiyatı = bu + boy × metre fiyatı">
-                  <Fiyat etiket="Flanş ve kaynak işçiliği" birim="₺/direk" deger={a.flansAdet} onChange={(v) => d((x) => void (x.flansAdet = v))} />
+                <Kalem cizim={CIZIM.flans} ad="Flanş (ayak plakası)" alt="Beton zemin ve duvar üstünde demir direğe eklenir">
+                  <Fiyat etiket="Flanş (ayak plakası)" birim="₺/direk" deger={a.flansAdet} onChange={(v) => d((x) => void (x.flansAdet = v))} />
                 </Kalem>
                 <Kalem cizim={CIZIM.dubel} ad="Dübel" alt="Adet fiyatı">
                   <Fiyat etiket="Dübel" birim="₺/adet" deger={a.dubelAdet} onChange={(v) => d((x) => void (x.dubelAdet = v))} />
@@ -567,6 +631,45 @@ export function AyarPaneli({ kapat, ilkBolum = "firma" }: { kapat: () => void; i
                   <Fiyat etiket="Araç kapısı" birim="₺/adet" deger={a.kapiArac} onChange={(v) => d((x) => void (x.kapiArac = v))} />
                 </Kalem>
               </div>
+              <div className="cam space-y-4 rounded-2xl p-4 md:p-5">
+                <div>
+                  <div className="text-lg font-extrabold">Kapı babaları</div>
+                  <div className="text-sm text-[var(--metin-2)]">
+                    Kapının iki yanındaki kalın demir kolonlar; o noktadaki çit direğinin yerine geçer. Fiyat = demir direk sabit maliyeti (+ flanş) + boy × metre.
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {(
+                    [
+                      ["yayaOlcu", "Yaya kapısı babası"],
+                      ["aracOlcu", "Araç kapısı babası"],
+                    ] as const
+                  ).map(([anahtar, ad]) => (
+                    <div key={anahtar}>
+                      <div className="mb-1.5 text-sm font-bold">{ad}</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {Object.keys(a.kapiBabasi.metre).map((o) => (
+                          <button
+                            key={o}
+                            type="button"
+                            onClick={() => d((x) => void (x.kapiBabasi[anahtar] = o))}
+                            className={`cam rounded-lg px-3 py-2 text-sm font-bold transition hover:bg-[var(--yuzey-2)] ${a.kapiBabasi[anahtar] === o ? "secili" : ""}`}
+                          >
+                            {o}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {Object.keys(a.kapiBabasi.metre).map((o) => (
+                    <OlcuFiyat key={o} ust={`Baba ${o}`}>
+                      <Fiyat etiket={`Kapı babası ${o}`} deger={a.kapiBabasi.metre[o] ?? 0} onChange={(v) => d((x) => void (x.kapiBabasi.metre[o] = v))} />
+                    </OlcuFiyat>
+                  ))}
+                </div>
+              </div>
             </Bolum>
 
             <Bolum id="aracKapi" ikon={<KapiIkon arac />}>
@@ -601,12 +704,12 @@ export function AyarPaneli({ kapat, ilkBolum = "firma" }: { kapat: () => void; i
                     ))}
                   </tbody>
                 </table>
-                <p className="mt-1 text-xs text-[var(--metin-2)]">Konsol sürgülüde kanat, kuyruğuyla açıklığın 1,5 katı uzunluktan hesaplanır.</p>
+                <p className="mt-1 text-xs text-[var(--metin-2)]">Uçan kapıda kanat, kuyruğuyla açıklığın 1,5 katı uzunluktan hesaplanır.</p>
               </div>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {(
                   [
-                    ["motorSurgulu", "Sürgü motoru + 2 kumanda", "Raylı ve konsol sürgülü", "₺/takım"],
+                    ["motorSurgulu", "Sürgü motoru + 2 kumanda", "Raylı sürgülü ve uçan kapı", "₺/takım"],
                     ["motorKanat", "Kanat kol motoru", "Kanat başına; çift kanatta 2 adet", "₺/adet"],
                     ["fotosel", "Fotosel (çift)", "Güvenlik fotoseli", "₺/takım"],
                     ["flasor", "Flaşör lamba", "Hareket uyarı ışığı", "₺/adet"],
@@ -660,6 +763,8 @@ export function AyarPaneli({ kapat, ilkBolum = "firma" }: { kapat: () => void; i
                   [
                     ["kilit", "Silindir kilit + kol", "Kapı başına", "₺/takım"],
                     ["elektrikliKilit", "Elektrikli kilit + kart okuyucu", "Geçiş kontrolü", "₺/takım"],
+                    ["gommeKolon", "Kolon betona gömme", "Kolon başına, temel ve beton", "₺/kolon"],
+                    ["flansKolon", "Flanşlı kolon ayağı", "Kolon başına, flanş + dübel", "₺/kolon"],
                     ["mizrakMetre", "Mızrak uç", "Kanat üstü, kanat metresi başı", "₺/m"],
                     ["montaj", "Kapı montajı", "Kapı başına", "₺/adet"],
                   ] as const

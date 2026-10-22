@@ -90,7 +90,7 @@ const olcuOku = (x1: number, y1: number, x2: number, y2: number, yazi: string, d
 const OK_TANIM = `<defs><marker id="ok" viewBox="0 0 6 6" refX="3" refY="3" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 6 3 0 6z" fill="${KIR}"/></marker></defs>`;
 
 /** Direk yan görünüşü: zemin, gömme / flanş, çit yüksekliği, kaş ve kesit. */
-function direkCizimi(t: Tasarim) {
+export function direkCizimi(t: Tasarim) {
   const dt = direkTipi(t.direk.tip);
   const kasL = kasUzunlugu(t);
   const gom = gommePayi(t);
@@ -132,7 +132,7 @@ function direkCizimi(t: Tasarim) {
 }
 
 /** Tel deseni: göz aralığı ve tel kalınlığı ölçüleriyle. */
-function telCizimi(t: Tasarim) {
+export function telCizimi(t: Tasarim) {
   const tip = t.tel.tip;
   const renk = t.tel.kaplama === "pvc" ? "#2f7a4a" : "#7d8794";
   const g = 26; // çizimde bir göz, px
@@ -205,12 +205,17 @@ export function pdfKabuk({
   no,
   tarih,
   govde,
+  baslik = "Fiyat Teklifi",
+  altBilgi = true,
 }: {
   ayarlar: Ayarlar;
   t: Pick<Tasarim, "musteri" | "satisci">;
   no: string;
   tarih: Date;
   govde: string;
+  baslik?: string;
+  /** Teklif geçerlilik satırı (teknik resimde yok) */
+  altBilgi?: boolean;
 }) {
   const { firma, gecerlilikGun } = ayarlar;
   const m = t.musteri;
@@ -289,7 +294,7 @@ export function pdfKabuk({
 <img class="filigran" src="${location.origin}${varlik("/logo.png")}" alt="">
 <div class="ic">
 <div class="serit"></div>
-<header><img src="${location.origin}${varlik("/logo.png")}" alt="${esc(firma.ad)}"><div><h1>${B("Fiyat Teklifi")}</h1><div class="k" style="text-align:right">${tarih.toLocaleDateString("tr-TR")} · No ${no}</div>${t.satisci ? `<div class="k" style="text-align:right">Teklifi veren: <b>${esc(t.satisci)}</b></div>` : ""}</div></header>
+<header><img src="${location.origin}${varlik("/logo.png")}" alt="${esc(firma.ad)}"><div><h1>${B(baslik)}</h1><div class="k" style="text-align:right">${tarih.toLocaleDateString("tr-TR")} · No ${no}</div>${t.satisci ? `<div class="k" style="text-align:right">Teklifi veren: <b>${esc(t.satisci)}</b></div>` : ""}</div></header>
 ${
   m.ad.trim() || musteriSatiri || m.not.trim()
     ? `<div class="musteri"><span class="k">Sayın</span> <b>${esc(m.ad.trim() || "—")}</b>${musteriSatiri ? `<span class="k"> · ${musteriSatiri}</span>` : ""}${
@@ -300,7 +305,7 @@ ${
 
 ${govde}
 <footer><span>${firmaSatiri}</span>
-<span>Teklif ${gecerlilikGun} gün (${gecerli} tarihine kadar) geçerlidir. Ölçüler sahada kesinleştirilir; miktarlar buna göre değişebilir.</span></footer>
+<span>${altBilgi ? `Teklif ${gecerlilikGun} gün (${gecerli} tarihine kadar) geçerlidir. Ölçüler sahada kesinleştirilir; miktarlar buna göre değişebilir.` : "Üretim planı · ölçüler cm · kesim payı 3 mm · ticari boy 6 m"}</span></footer>
 </div></div>
 </body></html>`;
 }

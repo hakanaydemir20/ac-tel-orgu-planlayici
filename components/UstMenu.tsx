@@ -21,6 +21,7 @@ export function UstMenu({
   kayitSayisi,
   yeni,
   ayarlar,
+  uretim,
 }: {
   baslik: string;
   soruCevap?: () => void;
@@ -34,6 +35,8 @@ export function UstMenu({
   kayitSayisi: number;
   yeni: () => void;
   ayarlar: () => void;
+  /** Üretim planı penceresi (kesim listesi + teknik resim) */
+  uretim: () => void;
 }) {
   return (
       <header className="flex h-16 shrink-0 items-center gap-3 border-b border-white/10 px-4 sm:px-6">
@@ -62,7 +65,7 @@ export function UstMenu({
             onClick={kaydet}
             disabled={bos}
             aria-label={kayitli ? "Kaydı güncelle" : "Teklifi kaydet"}
-            className={`cam flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition hover:bg-[var(--yuzey-2)] disabled:opacity-60 sm:px-4 ${kaydedildi ? "text-emerald-300 ring-1 ring-emerald-400/60" : ""}`}
+            className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-[#15803d] px-3 py-1.5 text-xs font-bold uppercase tracking-wider shadow-[0_6px_20px_-6px_#16a34a] transition hover:bg-[#16a34a] disabled:opacity-60 sm:px-4 ${kaydedildi ? "ring-2 ring-emerald-300" : ""}`}
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinejoin="round">
               {kaydedildi ? (
@@ -85,6 +88,19 @@ export function UstMenu({
               <rect x="6" y="14" width="12" height="7" />
             </svg>
             <span className="hidden sm:inline">{hazirlanan === "yazdir" ? "Hazırlanıyor…" : "Teklif yazdır"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={uretim}
+            disabled={bos}
+            aria-label="Üretim planla"
+            title="Kesim listesi, profil alımı ve teknik resim"
+            className="cam flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-bold uppercase tracking-wider ring-1 ring-amber-400/50 transition hover:bg-[var(--yuzey-2)] disabled:opacity-60 sm:px-4"
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4 text-amber-300" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z" />
+            </svg>
+            <span className="hidden sm:inline">Üretim planla</span>
           </button>
           <button
             type="button"

@@ -6,7 +6,7 @@ import { useTema } from "@/lib/tema";
 import * as THREE from "three";
 import type { Direk, Kosu, Nokta, Sonuc } from "@/lib/hesap";
 import { kasUzunlugu } from "@/lib/hesap";
-import { direkRengi, direkTipi, ustOlcu } from "@/lib/katalog";
+import { VARSAYILAN_AYARLAR, direkRengi, direkTipi, ustOlcu } from "@/lib/katalog";
 import { Tasarim, kenarHarfi, sekilNoktalari } from "@/lib/tasarim";
 import { disNormal, icinde } from "@/lib/geometri";
 import { sayiOku } from "@/lib/sayi";
@@ -29,7 +29,7 @@ function kesit(olcu: string) {
 }
 
 /** İki nokta arasında kare kesitli çubuk (payanda, kapı çerçevesi, kaş kolu). */
-function Cubuk({ a, b, k, renk, malzeme }: { a: THREE.Vector3; b: THREE.Vector3; k: number; renk?: string; malzeme?: THREE.Material }) {
+function Cubuk({ a, b, k, renk, malzeme, yuvarlak = false }: { a: THREE.Vector3; b: THREE.Vector3; k: number; renk?: string; malzeme?: THREE.Material; yuvarlak?: boolean }) {
   const { orta, q, boy } = useMemo(() => {
     const d = b.clone().sub(a);
     return {
@@ -40,7 +40,7 @@ function Cubuk({ a, b, k, renk, malzeme }: { a: THREE.Vector3; b: THREE.Vector3;
   }, [a, b]);
   return (
     <mesh position={orta} quaternion={q} castShadow material={malzeme}>
-      <boxGeometry args={[k, boy, k]} />
+      {yuvarlak ? <cylinderGeometry args={[k / 2, k / 2, boy, 16]} /> : <boxGeometry args={[k, boy, k]} />}
       {!malzeme && <meshStandardMaterial color={renk} metalness={0.6} roughness={0.4} />}
     </mesh>
   );
@@ -190,22 +190,23 @@ function Direkler({
               </mesh>
             )}
             {kas > 0 && (
-              <Cubuk a={ust} b={new THREE.Vector3(ust.x + n[0] * kasDx, ust.y + kasDy, ust.z + n[1] * kasDx)} k={betonDirek ? k * 0.85 : k * 0.8} malzeme={malzeme} />
+              <Cubuk a={ust} b={new THREE.Vector3(ust.x + n[0] * kasDx, ust.y + kasDy, ust.z + n[1] * kasDx)} k={betonDirek ? k * 0.85 : k} yuvarlak={boru} malzeme={malzeme} />
             )}
             {/* Profil + eğik kaş: tek köşe direğinden ikinci kenarın dışına ikinci kaş */}
             {kas > 0 && d.dis2 && (
-              <Cubuk a={ust} b={new THREE.Vector3(ust.x + d.dis2[0] * kasDx, ust.y + kasDy, ust.z + d.dis2[1] * kasDx)} k={k * 0.8} malzeme={malzeme} />
+              <Cubuk a={ust} b={new THREE.Vector3(ust.x + d.dis2[0] * kasDx, ust.y + kasDy, ust.z + d.dis2[1] * kasDx)} k={k} yuvarlak={boru} malzeme={malzeme} />
             )}
             {/* V kaş: ikinci kol içe doğru */}
             {kas > 0 && vKas && (
-              <Cubuk a={ust} b={new THREE.Vector3(ust.x - n[0] * kasDx, ust.y + kasDy, ust.z - n[1] * kasDx)} k={betonDirek ? k * 0.85 : k * 0.8} malzeme={malzeme} />
+              <Cubuk a={ust} b={new THREE.Vector3(ust.x - n[0] * kasDx, ust.y + kasDy, ust.z - n[1] * kasDx)} k={betonDirek ? k * 0.85 : k} yuvarlak={boru} malzeme={malzeme} />
             )}
             {d.payanda.map((p, j) => (
               <group key={j}>
                 <Cubuk
                   a={new THREE.Vector3(d.p[0], d.p[1] + h * 0.72, d.p[2])}
                   b={new THREE.Vector3(d.p[0] + p[0] * h * 0.6, d.p[1], d.p[2] + p[1] * h * 0.6)}
-                  k={betonDirek ? ara * 0.9 : ara * 0.85}
+                  k={betonDirek ? ara * 0.9 : ara}
+                  yuvarlak={boru}
                   malzeme={malzeme}
                 />
                 {temelTabla && (
@@ -524,13 +525,55 @@ function Jiletli({ kosular, y, cap }: { kosular: Kosu[]; y: number; cap: number 
 
 // ---------- kapılar ----------
 
-function Kapilar({ kapilar, h, telMalzeme }: { kapilar: Sonuc["kapilar"]; h: number; telMalzeme: THREE.Material }) {
+/**
+ * Kapı babaları: kapının iki yanında, çit direklerinden kalın demir kolonlar (ör. 60x60 yaya,
+ * 80x80 araç). Kapı üstünü aşar; üstte kapak, flanşlı zeminde ayak plakası.
+ */
+function Babalar({ babalar, h, kesitler, renk, flansli }: { babalar: Sonuc["babalar"]; h: number; kesitler: { yaya: number; arac: number }; renk: string; flansli: boolean }) {
+  const mat = useMemo(() => new THREE.MeshStandardMaterial({ color: renk, metalness: 0.45, roughness: 0.45 }), [renk]);
+  const kapak = useMemo(() => new THREE.MeshStandardMaterial({ color: "#1b2027", roughness: 0.7 }), []);
+  useAt(mat, kapak);
+  const boy = h + 0.25;
+  return (
+    <>
+      {babalar.map((b, i) => {
+        const k = kesitler[b.tur];
+        return (
+          <group key={i} position={[b.p[0], b.p[1], b.p[2]]}>
+            <mesh material={mat} position={[0, boy / 2, 0]} castShadow receiveShadow>
+              <boxGeometry args={[k, boy, k]} />
+            </mesh>
+            <mesh material={kapak} position={[0, boy + 0.01, 0]}>
+              <boxGeometry args={[k + 0.012, 0.02, k + 0.012]} />
+            </mesh>
+            {flansli && (
+              <mesh material={mat} position={[0, 0.008, 0]} castShadow receiveShadow>
+                <boxGeometry args={[k * 2.6, 0.016, k * 2.6]} />
+              </mesh>
+            )}
+          </group>
+        );
+      })}
+    </>
+  );
+}
+
+function Kapilar({ kapilar, h, telMalzeme, babaYari }: { kapilar: Sonuc["kapilar"]; h: number; telMalzeme: THREE.Material; babaYari?: { yaya: number; arac: number } }) {
   const cerceve = useMemo(() => new THREE.MeshStandardMaterial({ color: "#2b3038", metalness: 0.7, roughness: 0.35 }), []);
   return (
     <>
       {kapilar.map((k, i) => {
-        const a = V(k.a);
-        const b = V(k.b);
+        let a = V(k.a);
+        let b = V(k.b);
+        // Kanat babaların arasına oturur: iki uçtan baba yarı kalınlığı + boşluk kadar içeri
+        if (babaYari) {
+          const d = b.clone().sub(a);
+          const L = d.length();
+          const pay = Math.min(babaYari[k.kapi.tur] + 0.015, L * 0.2);
+          d.normalize();
+          a = a.clone().addScaledVector(d, pay);
+          b = b.clone().addScaledVector(d, -pay);
+        }
         const kanatlar: [THREE.Vector3, THREE.Vector3][] =
           k.kapi.tur === "arac" ? [[a, a.clone().lerp(b, 0.5)], [a.clone().lerp(b, 0.5), b]] : [[a, b]];
         return kanatlar.map(([p, q], j) => {
@@ -1209,7 +1252,19 @@ function Icerik({
 
         <Direkler direkler={sonuc.direkler} t={t} poli={poli} baslangic={baslangic} animasyon={!detay} dubel={dubel} />
         </group>
-        <Kapilar kapilar={sonuc.kapilar} h={Math.max(1, h)} telMalzeme={kapiMalzeme} />
+        <Babalar
+          babalar={sonuc.babalar ?? []}
+          h={Math.max(1, h)}
+          kesitler={{ yaya: kesit(VARSAYILAN_AYARLAR.kapiBabasi.yayaOlcu), arac: kesit(VARSAYILAN_AYARLAR.kapiBabasi.aracOlcu) }}
+          renk={t.direk.tip === "beton" ? "#9aa5b4" : direkRengi(t.direk.renk).renk}
+          flansli={t.zemin !== "toprak"}
+        />
+        <Kapilar
+          kapilar={sonuc.kapilar}
+          h={Math.max(1, h)}
+          telMalzeme={kapiMalzeme}
+          babaYari={sonuc.babalar?.length ? { yaya: kesit(VARSAYILAN_AYARLAR.kapiBabasi.yayaOlcu) / 2, arac: kesit(VARSAYILAN_AYARLAR.kapiBabasi.aracOlcu) / 2 } : undefined}
+        />
 
       </group>
 
@@ -1245,7 +1300,7 @@ export default function Sahne(props: SahneProps) {
         <OrbitControls makeDefault enableDamping enabled={!detay} maxPolarAngle={Math.PI / 2.05} minDistance={1} maxDistance={3000} />
         {/* Görünüm küpü: yüzüne tıklayınca kamera o yöne döner */}
         {!detay && (
-          <GizmoHelper alignment="bottom-left" margin={[62, 62]}>
+          <GizmoHelper alignment="bottom-left" margin={[132, 62]}>
             <GizmoViewcube
               faces={["Sağ", "Sol", "Üst", "Alt", "Ön", "Arka"]}
               color="#0b2350"
@@ -1266,7 +1321,7 @@ export default function Sahne(props: SahneProps) {
         )}
       </Canvas>
       {!detay && (
-        <div className="absolute bottom-3 left-[124px] z-20 flex flex-col gap-1.5">
+        <div className="absolute bottom-3 left-3 z-20 flex flex-col gap-1.5">
           {(
             [
               ["kose", "Köşe", "Köşe direğinden yakın görünüm"],

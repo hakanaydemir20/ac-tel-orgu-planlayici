@@ -11,7 +11,7 @@ export type KapiAilesi = "arac" | "yaya";
 
 export const KAPI_TIPLERI: { id: AracKapiTipi; ad: string; aciklama: string }[] = [
   { id: "surgulu", ad: "Raylı Sürgülü", aciklama: "Yerdeki ray üstünde yana kayar" },
-  { id: "konsol", ad: "Konsol Sürgülü", aciklama: "Raysız, askılı; kuyruğu taşır" },
+  { id: "konsol", ad: "Uçan Kapı", aciklama: "Raysız konsol; kuyruğu taşır" },
   { id: "cift", ad: "Çift Kanatlı", aciklama: "Ortadan iki kanat açılır" },
   { id: "tek", ad: "Tek Kanatlı", aciklama: "Tek büyük kanat açılır" },
 ];
@@ -41,6 +41,8 @@ export interface AracKapi {
   mizrak: boolean; // kanat üstünde mızrak uçlar
   kilit: boolean; // silindir kilit + kol
   elektrikliKilit: boolean; // elektrikli kilit / kart okuyucu
+  /** Kolon montajı: betona gömme ya da beton zemine flanşlı ayak */
+  montajTipi: "gomme" | "flans";
   montaj: boolean;
 }
 
@@ -57,6 +59,7 @@ export const varsayilanAracKapi = (): AracKapi => ({
   mizrak: false,
   kilit: false,
   elektrikliKilit: false,
+  montajTipi: "gomme",
   montaj: true,
 });
 
@@ -122,6 +125,12 @@ export function aracKapiHesapla(k: AracKapi, ay: Pick<Ayarlar, "kdvYuzde"> & { a
     ekle({ grup: "Hizmet", ad: k.tip === "surgulu" ? "Ray ve beton temel" : "Konsol taşıyıcı beton temel", miktar: rayBoyu(k), birim: "m", birimFiyat: f.rayMetre });
   if (k.kilit) ekle({ grup: "Motor ve aksesuar", ad: "Silindir kilit + kol", miktar: 1, birim: "takım", birimFiyat: f.kilit });
   if (k.elektrikliKilit) ekle({ grup: "Motor ve aksesuar", ad: "Elektrikli kilit + kart okuyucu", miktar: 1, birim: "takım", birimFiyat: f.elektrikliKilit });
+  if (aile === "yaya")
+    ekle(
+      k.montajTipi === "flans"
+        ? { grup: "Hizmet", ad: "Flanşlı kolon ayağı + dübel", miktar: 2, birim: "kolon", birimFiyat: f.flansKolon }
+        : { grup: "Hizmet", ad: "Kolon betona gömme", miktar: 2, birim: "kolon", birimFiyat: f.gommeKolon },
+    );
   if (k.montaj) ekle({ grup: "Hizmet", ad: "Kapı montajı", miktar: 1, birim: "adet", birimFiyat: f.montaj });
 
   const araToplam = kalemler.reduce((s, x) => s + x.tutar, 0);
