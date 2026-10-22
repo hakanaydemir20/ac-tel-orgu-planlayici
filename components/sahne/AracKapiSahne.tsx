@@ -136,6 +136,46 @@ function Kanat({ w, h, k, altKiris = false }: { w: number; h: number; k: AracKap
   );
 }
 
+/** Kanatlı kapı menteşeleri: kolonda kanat üst ve altında silindir menteşe. */
+function Menteseler({ x, h }: { x: number; h: number }) {
+  return (
+    <>
+      {[0.25, h - 0.15].map((y) => (
+        <mesh key={y} position={[x, y, 0]}>
+          <cylinderGeometry args={[0.022, 0.022, 0.12, 12]} />
+          <meshStandardMaterial color="#2b3038" metalness={0.7} roughness={0.35} />
+        </mesh>
+      ))}
+    </>
+  );
+}
+
+/** Kilit kutusu + iki yanda kol (silindir kilitli), kanadın serbest ucunda. */
+function KilitKutusu({ x, y }: { x: number; y: number }) {
+  const mat = useMemo(() => new THREE.MeshStandardMaterial({ color: "#2b3038", metalness: 0.6, roughness: 0.4 }), []);
+  const kol = useMemo(() => new THREE.MeshStandardMaterial({ color: "#c9d1db", metalness: 0.9, roughness: 0.25 }), []);
+  return (
+    <group position={[x, y, 0]}>
+      <mesh material={mat} castShadow>
+        <boxGeometry args={[0.07, 0.2, 0.08]} />
+      </mesh>
+      {[0.06, -0.06].map((z) => (
+        <group key={z} position={[0, 0.03, z]}>
+          <mesh material={kol} position={[-0.06, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
+            <cylinderGeometry args={[0.009, 0.009, 0.13, 10]} />
+          </mesh>
+        </group>
+      ))}
+      {/* silindir göbeği */}
+      {[0.041, -0.041].map((z) => (
+        <mesh key={z} material={kol} position={[0, -0.05, z]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.012, 0.012, 0.004, 14]} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
 function Kapi({ k, acik }: { k: AracKapi; acik: number }) {
   const W = k.genislik;
   const H = k.yukseklik;
@@ -144,6 +184,7 @@ function Kapi({ k, acik }: { k: AracKapi; acik: number }) {
   const betonMat = useMemo(() => new THREE.MeshStandardMaterial({ color: "#9aa0a8", roughness: 0.95 }), []);
   const motorMat = useMemo(() => new THREE.MeshStandardMaterial({ color: "#2a2f37", roughness: 0.6 }), []);
   const sol = -W / 2;
+  const kilitY = Math.min(1.05, H * 0.55); // kol yüksekliği
   const L = kanatBoyu(k);
   const z = 0.12; // sürgülü kanat çit hattının iç yanında kayar
 
@@ -227,18 +268,45 @@ function Kapi({ k, acik }: { k: AracKapi; acik: number }) {
         <>
           <group position={[sol, 0.08, 0]} rotation={[0, -acik * 1.45, 0]}>
             <Kanat w={W / 2 - 0.01} h={H} k={k} />
+            {k.kilit && <KilitKutusu x={W / 2 - 0.06} y={kilitY} />}
           </group>
           <group position={[W / 2, 0.08, 0]} rotation={[0, Math.PI + acik * 1.45, 0]}>
             <group scale={[1, 1, -1]}>
               <Kanat w={W / 2 - 0.01} h={H} k={k} />
             </group>
           </group>
+          <Menteseler x={sol} h={H} />
+          <Menteseler x={W / 2} h={H} />
         </>
       )}
 
       {k.tip === "tek" && (
-        <group position={[sol, 0.08, 0]} rotation={[0, -acik * 1.45, 0]}>
-          <Kanat w={W - 0.01} h={H} k={k} />
+        <>
+          <group position={[sol, 0.08, 0]} rotation={[0, -acik * 1.45, 0]}>
+            <Kanat w={W - 0.01} h={H} k={k} />
+            {k.kilit && <KilitKutusu x={W - 0.07} y={kilitY} />}
+          </group>
+          <Menteseler x={sol} h={H} />
+          {/* Karşı kolonda kilit karşılığı */}
+          {k.kilit && (
+            <mesh material={kolonMat} position={[W / 2 + 0.02, kilitY + 0.08, 0]}>
+              <boxGeometry args={[0.04, 0.12, 0.05]} />
+            </mesh>
+          )}
+        </>
+      )}
+
+      {/* Elektrikli kilit: kart okuyucu kilit tarafındaki kolonda, kol hizasında */}
+      {k.elektrikliKilit && (k.tip === "tek" || k.tip === "cift") && (
+        <group position={[W / 2 + DIREK / 2, kilitY + 0.25, DIREK / 2 + 0.02]}>
+          <mesh>
+            <boxGeometry args={[0.08, 0.13, 0.03]} />
+            <meshStandardMaterial color="#1d2229" roughness={0.5} />
+          </mesh>
+          <mesh position={[0, 0.03, 0.016]}>
+            <boxGeometry args={[0.05, 0.03, 0.004]} />
+            <meshStandardMaterial color="#22c55e" emissive="#16a34a" emissiveIntensity={0.9} />
+          </mesh>
         </group>
       )}
 
@@ -274,7 +342,7 @@ function Kapi({ k, acik }: { k: AracKapi; acik: number }) {
 export default function AracKapiSahne({ kapi, acik }: { kapi: AracKapi; acik: number }) {
   const koyu = useTema((s) => s.tema) !== "acik";
   const W = kapi.genislik;
-  const uzak = Math.max(6, W * 1.25 + 3);
+  const uzak = Math.max(W < 3 ? 3.6 : 6, W * 1.25 + 3);
   return (
     <Canvas shadows dpr={[1, 2]} gl={{ preserveDrawingBuffer: true, antialias: true }} camera={{ fov: 40, near: 0.1, far: 500, position: [W * 0.25, kapi.yukseklik + 1.2, uzak] }}>
       <color attach="background" args={[koyu ? "#071733" : "#dbe5f1"]} />

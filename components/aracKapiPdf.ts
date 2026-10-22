@@ -1,23 +1,31 @@
 // Araç kapısı teklif sayfası: çitle aynı kabuk (logo, müşteri, alt bilgi), kapıya özel içerik.
-import { type AracKapi, KAPI_DOLGULARI, KAPI_TIPLERI, aracKapiHesapla, kanatBoyu, rayBoyu, surgulu } from "@/lib/aracKapi";
+import { type AracKapi, type KapiAilesi, KAPI_DOLGULARI, aracKapiHesapla, kanatBoyu, rayBoyu, surgulu, tipAdi } from "@/lib/aracKapi";
 import type { AracKapiTeklifi } from "@/lib/aracKapiStore";
 import { type Ayarlar, direkRengi } from "@/lib/katalog";
 import { B, esc, pdfKabuk } from "./pdf";
 import { sayi, tl } from "./ui";
 
-function ozellikler(k: AracKapi, alan: number): [string, string][] {
+function ozellikler(k: AracKapi, alan: number, aile: KapiAilesi): [string, string][] {
   const renk = direkRengi(k.renk);
   const satir: [string, string][] = [
-    ["Kapı tipi", KAPI_TIPLERI.find((x) => x.id === k.tip)!.ad],
+    ["Kapı tipi", tipAdi(k, aile)],
     ["Dolgu", KAPI_DOLGULARI.find((x) => x.id === k.dolgu)!.ad],
     ["Geçiş genişliği", `${sayi(k.genislik, 2)} m`],
     ["Yükseklik", `${sayi(k.yukseklik, 2)} m`],
     ["Kanat", `${sayi(kanatBoyu(k), 2)} m${k.tip === "konsol" ? " (kuyruk dahil)" : ""} · ${sayi(alan)} m²`],
     ["Renk", `${renk.ad}${k.renk !== "galvaniz" ? ` (${renk.kod})` : ""}`],
+    ...(aile === "yaya"
+      ? ([
+          ["Kilit", k.kilit ? "Silindir kilit + kol" : "Yok"],
+          ["Geçiş kontrolü", k.elektrikliKilit ? "Elektrikli kilit + kart okuyucu" : "Yok"],
+        ] as [string, string][])
+      : []),
+  ];
+  if (aile === "arac") satir.push(
     ["Motor", k.motor ? (surgulu(k) ? "Sürgü motoru + 2 kumanda" : `Kanat kol motoru${k.tip === "cift" ? " × 2" : ""} + kumanda`) : "Yok (manuel)"],
     ["Fotosel / flaşör", `${k.fotosel ? "Fotosel var" : "Fotosel yok"} · ${k.flasor ? "flaşör var" : "flaşör yok"}`],
-  ];
-  if (surgulu(k)) satir.push([k.tip === "surgulu" ? "Ray ve temel" : "Taşıyıcı temel", k.ray ? `${sayi(rayBoyu(k), 2)} m` : "Dahil değil"]);
+  );
+  if (aile === "arac" && surgulu(k)) satir.push([k.tip === "surgulu" ? "Ray ve temel" : "Taşıyıcı temel", k.ray ? `${sayi(rayBoyu(k), 2)} m` : "Dahil değil"]);
   satir.push(["Mızrak uç", k.mizrak ? "Var" : "Yok"], ["Montaj", k.montaj ? "Dahil" : "Dahil değil"]);
   return satir;
 }
@@ -53,6 +61,7 @@ export function aracKapiHtml({
   no,
   tarih,
   resim,
+  aile = "arac",
 }: {
   k: AracKapi;
   t: AracKapiTeklifi;
@@ -60,22 +69,23 @@ export function aracKapiHtml({
   no: string;
   tarih: Date;
   resim: string | null;
+  aile?: KapiAilesi;
 }) {
-  const fiyat = t.fiyatlar ? { aracKapi: t.fiyatlar.aracKapi, kdvYuzde: t.fiyatlar.kdvYuzde } : ayarlar;
-  const s = aracKapiHesapla(k, fiyat);
-  const oz = ozellikler(k, s.alan);
+  const fiyat = t.fiyatlar ? { aracKapi: t.fiyatlar.aracKapi, kdvYuzde: t.fiyatlar.kdvYuzde } : { aracKapi: aile === "yaya" ? ayarlar.yayaKapi : ayarlar.aracKapi, kdvYuzde: ayarlar.kdvYuzde };
+  const s = aracKapiHesapla(k, fiyat, aile);
+  const oz = ozellikler(k, s.alan, aile);
   const ozSatir: string[] = [];
   for (let i = 0; i < oz.length; i += 2) {
     const [a, b] = [oz[i], oz[i + 1]];
     ozSatir.push(`<tr><th>${a[0]}</th><td>${a[1]}</td>${b ? `<th>${b[0]}</th><td>${b[1]}</td>` : "<th></th><td></td>"}</tr>`);
   }
   const ozet: [string, string][] = [
-    ["Kapı", KAPI_TIPLERI.find((x) => x.id === k.tip)!.ad],
+    ["Kapı", tipAdi(k, aile)],
     ["Dolgu", KAPI_DOLGULARI.find((x) => x.id === k.dolgu)!.ad],
     ["Ölçü", `${sayi(k.genislik, 2)} × ${sayi(k.yukseklik, 2)} m`],
     ["Kanat alanı", `${sayi(s.alan)} m²`],
     ["Renk", direkRengi(k.renk).ad],
-    ["Motor", k.motor ? "Var" : "Yok"],
+    aile === "yaya" ? ["Kilit", k.elektrikliKilit ? "Elektrikli" : k.kilit ? "Silindir" : "Yok"] : ["Motor", k.motor ? "Var" : "Yok"],
   ];
   const govde = `<div class="ozet">${ozet.map(([a, b]) => `<div><span class="k">${a}</span><b>${esc(b)}</b></div>`).join("")}</div>
 <div class="ikili">
@@ -93,14 +103,14 @@ export function aracKapiHtml({
   return pdfKabuk({ ayarlar, t, no, tarih, govde });
 }
 
-export function aracKapiWhatsapp(k: AracKapi, t: AracKapiTeklifi, ayarlar: Ayarlar) {
-  const fiyat = t.fiyatlar ? { aracKapi: t.fiyatlar.aracKapi, kdvYuzde: t.fiyatlar.kdvYuzde } : ayarlar;
-  const s = aracKapiHesapla(k, fiyat);
+export function aracKapiWhatsapp(k: AracKapi, t: AracKapiTeklifi, ayarlar: Ayarlar, aile: KapiAilesi = "arac") {
+  const fiyat = t.fiyatlar ? { aracKapi: t.fiyatlar.aracKapi, kdvYuzde: t.fiyatlar.kdvYuzde } : { aracKapi: aile === "yaya" ? ayarlar.yayaKapi : ayarlar.aracKapi, kdvYuzde: ayarlar.kdvYuzde };
+  const s = aracKapiHesapla(k, fiyat, aile);
   return [
-    `*${ayarlar.firma.ad} – Araç Kapısı Teklifi*`,
+    `*${ayarlar.firma.ad} – ${aile === "yaya" ? "Yaya" : "Araç"} Kapısı Teklifi*`,
     ...(t.musteri.ad.trim() ? [`Sayın ${t.musteri.ad.trim()}`] : []),
     "",
-    ...ozellikler(k, s.alan).map(([a, b]) => `• ${a}: ${b}`),
+    ...ozellikler(k, s.alan, aile).map(([a, b]) => `• ${a}: ${b}`),
     "",
     `Toplam (KDV hariç): ${tl(s.araToplam)}`,
     `*Genel toplam (KDV dahil): ${tl(s.toplam)}*`,

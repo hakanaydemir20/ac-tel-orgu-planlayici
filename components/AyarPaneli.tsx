@@ -8,7 +8,7 @@ import { DirekIkon, KapiIkon, TelIkon, ZeminIkon } from "./ikonlar";
 import { sayi, tl } from "./ui";
 import { varlik } from "@/lib/yol";
 import { DUZLEMSEL_CAPLAR } from "@/lib/tasarim";
-import { KAPI_DOLGULARI, KAPI_TIPLERI } from "@/lib/aracKapi";
+import { KAPI_DOLGULARI, KAPI_TIPLERI, YAYA_KAPI_TIPLERI } from "@/lib/aracKapi";
 
 // ---------- küçük çizimler (bağlantı ve hizmet kalemleri) ----------
 
@@ -312,6 +312,7 @@ const BOLUMLER = [
   { id: "baglanti", ad: "Bağlantı", aciklama: "Gergi, kelepçe, bağ teli" },
   { id: "kapi", ad: "Kapılar", aciklama: "Çitteki kapılar, adet fiyatı" },
   { id: "aracKapi", ad: "Araç kapısı", aciklama: "Araç kapısı planlayıcı: m² ve aksesuar fiyatları" },
+  { id: "yayaKapi", ad: "Yaya kapısı", aciklama: "Yaya kapısı planlayıcı: m² ve kilit fiyatları" },
   { id: "hizmet", ad: "Hizmetler ve vergi", aciklama: "Montaj, temel, nakliye, KDV" },
 ] as const;
 type BolumId = (typeof BOLUMLER)[number]["id"];
@@ -324,6 +325,7 @@ const MENU_IKON: Record<BolumId, ReactNode> = {
   baglanti: CIZIM.kelepce,
   kapi: <KapiIkon arac />,
   aracKapi: <KapiIkon arac />,
+  yayaKapi: <KapiIkon arac={false} />,
   hizmet: CIZIM.nakliye,
 };
 
@@ -615,6 +617,55 @@ export function AyarPaneli({ kapat, ilkBolum = "firma" }: { kapat: () => void; i
                 ).map(([anahtar, ad, alt, birim]) => (
                   <Kalem key={anahtar} cizim={<KapiIkon arac />} ad={ad} alt={alt}>
                     <Fiyat etiket={ad} birim={birim} deger={a.aracKapi[anahtar]} onChange={(v) => d((x) => void (x.aracKapi[anahtar] = v))} />
+                  </Kalem>
+                ))}
+              </div>
+            </Bolum>
+
+            <Bolum id="yayaKapi" ikon={<KapiIkon arac={false} />}>
+              <div className="cam overflow-x-auto rounded-2xl p-4 md:p-5">
+                <div className="mb-2 font-bold">Kanat fiyatı · ₺ / m²</div>
+                <table className="w-full min-w-[560px] border-separate border-spacing-2">
+                  <thead>
+                    <tr>
+                      <th className="w-40 text-left text-xs font-bold uppercase tracking-wider text-[var(--metin-2)]">Tip ↓ · Dolgu →</th>
+                      {KAPI_DOLGULARI.map((g) => (
+                        <th key={g.id} className="text-center text-sm font-extrabold">
+                          {g.ad}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {YAYA_KAPI_TIPLERI.map((tp) => (
+                      <tr key={tp.id}>
+                        <th className="text-left text-sm font-extrabold">{tp.ad}</th>
+                        {KAPI_DOLGULARI.map((g) => (
+                          <td key={g.id}>
+                            <Fiyat
+                              etiket={`${tp.ad} ${g.ad} m² fiyatı`}
+                              birim="₺/m²"
+                              deger={a.yayaKapi.m2[tp.id]?.[g.id] ?? 0}
+                              onChange={(v) => d((x) => void (x.yayaKapi.m2[tp.id][g.id] = v))}
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {(
+                  [
+                    ["kilit", "Silindir kilit + kol", "Kapı başına", "₺/takım"],
+                    ["elektrikliKilit", "Elektrikli kilit + kart okuyucu", "Geçiş kontrolü", "₺/takım"],
+                    ["mizrakMetre", "Mızrak uç", "Kanat üstü, kanat metresi başı", "₺/m"],
+                    ["montaj", "Kapı montajı", "Kapı başına", "₺/adet"],
+                  ] as const
+                ).map(([anahtar, ad, alt, birim]) => (
+                  <Kalem key={anahtar} cizim={<KapiIkon arac={false} />} ad={ad} alt={alt}>
+                    <Fiyat etiket={`Yaya ${ad}`} birim={birim} deger={a.yayaKapi[anahtar]} onChange={(v) => d((x) => void (x.yayaKapi[anahtar] = v))} />
                   </Kalem>
                 ))}
               </div>

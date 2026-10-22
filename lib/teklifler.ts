@@ -23,7 +23,7 @@ export interface KayitliTeklif {
   kdvYuzde?: number;
   firma?: FirmaBilgisi;
   /** Planlayıcı türü (yoksa çit) */
-  tur?: "cit" | "arac";
+  tur?: "cit" | "arac" | "yaya";
   /** Araç kapısı teklifinde kapı tasarımı ve verildiği tarihteki fiyatları */
   aracKapi?: AracKapi;
   aracFiyat?: AracKapiDonuk;

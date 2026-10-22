@@ -2,10 +2,12 @@
 import type { Ayarlar, DirekRengi } from "./katalog";
 import { direkRengi } from "./katalog";
 import type { AracKapiFiyatlari } from "./aracKapiFiyat";
-export { type AracKapiFiyatlari, VARSAYILAN_ARAC_KAPI_FIYAT } from "./aracKapiFiyat";
+export { type AracKapiFiyatlari, VARSAYILAN_ARAC_KAPI_FIYAT, VARSAYILAN_YAYA_KAPI_FIYAT } from "./aracKapiFiyat";
 
 export type AracKapiTipi = "surgulu" | "konsol" | "cift" | "tek";
 export type KapiDolgu = "profil" | "panel" | "kafes" | "sac";
+/** Kapı ailesi: araç kapısı ya da yaya (personel) kapısı */
+export type KapiAilesi = "arac" | "yaya";
 
 export const KAPI_TIPLERI: { id: AracKapiTipi; ad: string; aciklama: string }[] = [
   { id: "surgulu", ad: "Raylı Sürgülü", aciklama: "Yerdeki ray üstünde yana kayar" },
@@ -21,7 +23,9 @@ export const KAPI_DOLGULARI: { id: KapiDolgu; ad: string; aciklama: string }[] =
   { id: "sac", ad: "Dolu Sac", aciklama: "Kapalı, içi görünmez" },
 ];
 
-export const KAPI_GENISLIKLERI = [3, 4, 5, 6, 8, 10];
+export const KAPI_GENISLIKLERI = [3, 4, 5, 6, 8, 10, 12];
+/** Kanatlı araç kapısı en fazla 10 m; raylı ve konsol 12 m'ye kadar */
+export const azamiGenislik = (k: Pick<AracKapi, "tip">, aile: KapiAilesi = "arac") => (aile === "yaya" ? (k.tip === "cift" ? 4 : 2) : surgulu(k) ? 12 : 10);
 export const KAPI_YUKSEKLIKLERI = [1.5, 1.8, 2, 2.5];
 
 export interface AracKapi {
@@ -35,6 +39,8 @@ export interface AracKapi {
   flasor: boolean;
   ray: boolean; // sürgülüde ray / konsolda taşıyıcı temel
   mizrak: boolean; // kanat üstünde mızrak uçlar
+  kilit: boolean; // silindir kilit + kol
+  elektrikliKilit: boolean; // elektrikli kilit / kart okuyucu
   montaj: boolean;
 }
 
@@ -49,6 +55,8 @@ export const varsayilanAracKapi = (): AracKapi => ({
   flasor: false,
   ray: true,
   mizrak: false,
+  kilit: false,
+  elektrikliKilit: false,
   montaj: true,
 });
 
@@ -70,9 +78,21 @@ export interface KapiKalem {
 const yuv = (n: number) => Math.round(n * 100) / 100;
 const tr = (n: number) => n.toLocaleString("tr-TR", { maximumFractionDigits: 2 });
 
-export function aracKapiHesapla(k: AracKapi, ay: Pick<Ayarlar, "kdvYuzde"> & { aracKapi: AracKapiFiyatlari }) {
+/** Yaya kapısı tip adları (araçtaki tek/çift kanat ile aynı mekanizma). */
+export const YAYA_KAPI_TIPLERI: { id: AracKapiTipi; ad: string; aciklama: string }[] = [
+  { id: "tek", ad: "Tek Kanat Personel", aciklama: "İki kolon arasında tek kanat" },
+  { id: "cift", ad: "Çift Kanat Yaya", aciklama: "Ortadan açılan iki kanat" },
+];
+export const tipAdi = (k: Pick<AracKapi, "tip">, aile: KapiAilesi) =>
+  (aile === "yaya" ? YAYA_KAPI_TIPLERI : KAPI_TIPLERI).find((x) => x.id === k.tip)?.ad ?? KAPI_TIPLERI.find((x) => x.id === k.tip)!.ad;
+
+/**
+ * Kapı fiyat hesabı. Araç: m² + motor/aksesuar/ray. Yaya: m² + kilit / elektrikli kilit.
+ * `ay.aracKapi`, ailenin fiyat tablosudur (yaya kapısında Ayarlar'daki yaya tablosu).
+ */
+export function aracKapiHesapla(k: AracKapi, ay: Pick<Ayarlar, "kdvYuzde"> & { aracKapi: AracKapiFiyatlari }, aile: KapiAilesi = "arac") {
   const f = ay.aracKapi;
-  const tip = KAPI_TIPLERI.find((x) => x.id === k.tip)!;
+  const tip = { ad: tipAdi(k, aile) };
   const dolgu = KAPI_DOLGULARI.find((x) => x.id === k.dolgu)!;
   const kalemler: KapiKalem[] = [];
   const ekle = (x: Omit<KapiKalem, "tutar">) => {
@@ -83,22 +103,25 @@ export function aracKapiHesapla(k: AracKapi, ay: Pick<Ayarlar, "kdvYuzde"> & { a
   const renk = direkRengi(k.renk);
   ekle({
     grup: "Kapı",
-    ad: `${tip.ad} kapı · ${dolgu.ad} · ${tr(k.genislik)} × ${tr(k.yukseklik)} m · ${renk.ad}${k.renk !== "galvaniz" ? ` (${renk.kod})` : ""}${k.tip === "konsol" ? ` · kanat ${tr(kanatBoyu(k))} m` : ""}`,
+    ad: `${tip.ad}${aile === "yaya" ? " kapısı" : " kapı"} · ${dolgu.ad} · ${tr(k.genislik)} × ${tr(k.yukseklik)} m · ${renk.ad}${k.renk !== "galvaniz" ? ` (${renk.kod})` : ""}${k.tip === "konsol" ? ` · kanat ${tr(kanatBoyu(k))} m` : ""}`,
     miktar: alan,
     birim: "m²",
     birimFiyat: f.m2[k.tip]?.[k.dolgu] ?? 0,
   });
-  if (k.motor)
+  const arac = aile === "arac";
+  if (arac && k.motor)
     ekle(
       surgulu(k)
         ? { grup: "Motor ve aksesuar", ad: "Sürgü motoru + 2 kumanda", miktar: 1, birim: "takım", birimFiyat: f.motorSurgulu }
         : { grup: "Motor ve aksesuar", ad: "Kanat kol motoru (2 kumanda dahil)", miktar: k.tip === "cift" ? 2 : 1, birim: "adet", birimFiyat: f.motorKanat },
     );
   if (k.mizrak) ekle({ grup: "Kapı", ad: "Mızrak uç (kanat üstü)", miktar: kanatBoyu(k), birim: "m", birimFiyat: f.mizrakMetre });
-  if (k.fotosel) ekle({ grup: "Motor ve aksesuar", ad: "Fotosel (çift)", miktar: 1, birim: "takım", birimFiyat: f.fotosel });
-  if (k.flasor) ekle({ grup: "Motor ve aksesuar", ad: "Flaşör lamba", miktar: 1, birim: "adet", birimFiyat: f.flasor });
-  if (k.ray && surgulu(k))
+  if (arac && k.fotosel) ekle({ grup: "Motor ve aksesuar", ad: "Fotosel (çift)", miktar: 1, birim: "takım", birimFiyat: f.fotosel });
+  if (arac && k.flasor) ekle({ grup: "Motor ve aksesuar", ad: "Flaşör lamba", miktar: 1, birim: "adet", birimFiyat: f.flasor });
+  if (arac && k.ray && surgulu(k))
     ekle({ grup: "Hizmet", ad: k.tip === "surgulu" ? "Ray ve beton temel" : "Konsol taşıyıcı beton temel", miktar: rayBoyu(k), birim: "m", birimFiyat: f.rayMetre });
+  if (k.kilit) ekle({ grup: "Motor ve aksesuar", ad: "Silindir kilit + kol", miktar: 1, birim: "takım", birimFiyat: f.kilit });
+  if (k.elektrikliKilit) ekle({ grup: "Motor ve aksesuar", ad: "Elektrikli kilit + kart okuyucu", miktar: 1, birim: "takım", birimFiyat: f.elektrikliKilit });
   if (k.montaj) ekle({ grup: "Hizmet", ad: "Kapı montajı", miktar: 1, birim: "adet", birimFiyat: f.montaj });
 
   const araToplam = kalemler.reduce((s, x) => s + x.tutar, 0);

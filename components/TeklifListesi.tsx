@@ -6,7 +6,8 @@ import { useTasarim } from "@/lib/store";
 import { type KayitliTeklif, useTeklifler } from "@/lib/teklifler";
 import { A4, teklifHtml } from "./pdf";
 import { aracKapiHtml } from "./aracKapiPdf";
-import { useAracKapi } from "@/lib/aracKapiStore";
+import { kapiStore } from "@/lib/aracKapiStore";
+import { AILELER } from "@/lib/kapiAilesi";
 import { pdfIndir, yazdir as htmlYazdir } from "./TeklifYazdir";
 import { varlik } from "@/lib/yol";
 import { useTeklifCikti } from "./TeklifYazdir";
@@ -84,10 +85,10 @@ export function TeklifListesi({ kapat }: { kapat: () => void }) {
                   <div className="truncate text-sm text-[var(--metin-2)]">
                     {k.satisci && <>{k.satisci} · </>}
                     {new Date(k.tarih).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" })} ·{" "}
-                    {k.tur === "arac" && k.aracKapi ? `${sayi(k.aracKapi.genislik)} × ${sayi(k.aracKapi.yukseklik)} m kapı` : `${sayi(k.telUzunluk)} m`}
+                    {(k.tur === "arac" || k.tur === "yaya") && k.aracKapi ? `${sayi(k.aracKapi.genislik)} × ${sayi(k.aracKapi.yukseklik)} m kapı` : `${sayi(k.telUzunluk)} m`}
                   </div>
                   <div className="truncate text-xs text-[var(--metin-2)]">
-                    {k.tur === "arac" ? "🚪 Araç kapısı · " : "Çit · "}
+                    {k.tur === "arac" ? "🚪 Araç kapısı · " : k.tur === "yaya" ? "🚶 Yaya kapısı · " : "Çit · "}
                     {k.no}
                     {!!k.gecmis?.length && <> · {k.gecmis.length} önceki revizyon</>}
                     {k.no === acikNo && <span className="font-bold text-red-200"> · ekranda</span>}
@@ -100,7 +101,7 @@ export function TeklifListesi({ kapat }: { kapat: () => void }) {
 
           {/* Detay: PDF önizleme + işlemler */}
           <section className={`min-h-0 flex-1 flex-col ${kayit ? "flex" : "hidden lg:flex"}`}>
-            {kayit?.tur === "arac" ? (
+            {kayit?.tur === "arac" || kayit?.tur === "yaya" ? (
               <KapiOnizleme
                 key={kayit.no}
                 k={kayit}
@@ -240,13 +241,17 @@ function A4Onizleme({ html, baslik }: { html: string; baslik: string }) {
 
 /** Araç kapısı teklifinin önizlemesi: PDF, yazdır ve araç kapısı planlayıcıda açma. */
 function KapiOnizleme({ k, geri, sil, kapat }: { k: KayitliTeklif; geri: () => void; sil: () => void; kapat: () => void }) {
+  const aile = AILELER[k.tur === "yaya" ? "yaya" : "arac"];
   const guncel = useAyarlar((a) => a.ayarlar);
   const ay = useMemo(() => ({ ...guncel, ...(k.firma && { firma: k.firma }) }), [k, guncel]);
   const teklif = useMemo(
     () => ({ teklifNo: k.no, musteri: k.tasarim.musteri, satisci: k.satisci ?? "", fiyatlar: k.aracFiyat ?? null }),
     [k],
   );
-  const html = useMemo(() => aracKapiHtml({ k: k.aracKapi!, t: teklif, ayarlar: ay, no: k.no, tarih: new Date(k.tarih), resim: null }), [k, teklif, ay]);
+  const html = useMemo(
+    () => aracKapiHtml({ k: k.aracKapi!, t: teklif, ayarlar: ay, no: k.no, tarih: new Date(k.tarih), resim: null, aile: aile.id }),
+    [k, teklif, ay, aile.id],
+  );
   const [hazir, setHazir] = useState<"indir" | "yazdir" | null>(null);
   const cikti = async (tur: "indir" | "yazdir") => {
     setHazir(tur);
@@ -258,10 +263,10 @@ function KapiOnizleme({ k, geri, sil, kapat }: { k: KayitliTeklif; geri: () => v
     }
   };
   const ac = () => {
-    if (!confirm("Teklif araç kapısı planlayıcıda açılsın mı? Ekrandaki kapı tasarımının yerine geçer.")) return;
-    useAracKapi.getState().yukle(k.aracKapi!, teklif);
+    if (!confirm(`Teklif ${aile.kisa.toLocaleLowerCase("tr")} planlayıcıda açılsın mı? Ekrandaki kapı tasarımının yerine geçer.`)) return;
+    kapiStore(aile.id).getState().yukle(k.aracKapi!, teklif);
     kapat();
-    if (!location.pathname.includes("/arac")) location.href = varlik("/arac/");
+    if (!location.pathname.includes(aile.yol.replace(/\/$/, ""))) location.href = varlik(aile.yol);
   };
   const dugme = "rounded-xl px-4 py-3 text-sm font-extrabold uppercase tracking-wider transition disabled:opacity-60 sm:text-base";
   return (
@@ -273,7 +278,7 @@ function KapiOnizleme({ k, geri, sil, kapat }: { k: KayitliTeklif; geri: () => v
         <div className="mr-auto min-w-0">
           <div className="truncate text-lg font-extrabold">{k.musteri || "İsimsiz müşteri"}</div>
           <div className="truncate text-sm text-[var(--metin-2)]">
-            🚪 Araç kapısı · {k.no}
+            {aile.ikon} {aile.kisa} · {k.no}
             {k.satisci && ` · Teklifi veren: ${k.satisci}`}
           </div>
         </div>

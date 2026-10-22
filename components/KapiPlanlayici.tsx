@@ -1,8 +1,9 @@
 "use client";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
-import { KAPI_DOLGULARI, KAPI_GENISLIKLERI, KAPI_TIPLERI, KAPI_YUKSEKLIKLERI, aracKapiHesapla, surgulu } from "@/lib/aracKapi";
-import { kapiFiyatlari, kapiTeklifiKaydet, useAracKapi } from "@/lib/aracKapiStore";
+import { KAPI_DOLGULARI, type KapiAilesi, aracKapiHesapla, surgulu } from "@/lib/aracKapi";
+import { AILELER } from "@/lib/kapiAilesi";
+import { kapiFiyatlari, kapiStore, kapiTeklifiKaydet } from "@/lib/aracKapiStore";
 import { useAyarlar } from "@/lib/ayarlar";
 import type { Musteri } from "@/lib/tasarim";
 import { teklifNo as yeniNo } from "@/lib/teklifKaydi";
@@ -81,12 +82,15 @@ function DolguCizimi({ dolgu }: { dolgu: string }) {
   );
 }
 
-/** Araç kapısı planlayıcı: tip, dolgu, ölçü, renk ve aksesuar; canlı 3D ve fiyat. */
-export function AracKapiPlanlayici() {
-  const { kapi: k, teklif, guncelle, teklifGuncelle, sifirla } = useAracKapi();
+/** Kapı planlayıcı (araç ya da yaya ailesi): tip, dolgu, ölçü, renk ve aksesuar; canlı 3D ve fiyat. */
+export function KapiPlanlayici({ aile: aileId }: { aile: KapiAilesi }) {
+  const aile = AILELER[aileId];
+  const store = kapiStore(aileId);
+  const { kapi: k, teklif, guncelle, teklifGuncelle, sifirla } = store();
   const ayarlar = useAyarlar((a) => a.ayarlar);
-  const fiyat = useMemo(() => kapiFiyatlari(teklif, ayarlar), [teklif, ayarlar]);
-  const s = useMemo(() => aracKapiHesapla(k, fiyat), [k, fiyat]);
+  const fiyat = useMemo(() => kapiFiyatlari(teklif, ayarlar, aileId), [teklif, ayarlar, aileId]);
+  const s = useMemo(() => aracKapiHesapla(k, fiyat, aileId), [k, fiyat, aileId]);
+  const arac = aileId === "arac";
   const kayitSayisi = useTeklifler((x) => x.liste.length);
   const [acik, setAcik] = useState(0);
   const [ayar, setAyar] = useState(false);
@@ -99,9 +103,9 @@ export function AracKapiPlanlayici() {
 
   useEffect(() => {
     useAyarlar.persist.rehydrate();
-    useAracKapi.persist.rehydrate();
+    store.persist.rehydrate();
     useTeklifler.persist.rehydrate();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!kaydedildi) return;
     const z = setTimeout(() => setKaydedildi(false), 2000);
@@ -113,7 +117,7 @@ export function AracKapiPlanlayici() {
     if (!m && (!teklif.musteri.ad.trim() || !teklif.satisci)) return setSor(true);
     const t = m ? { ...teklif, musteri: m, satisci: satisci ?? teklif.satisci } : teklif;
     if (m) teklifGuncelle((x) => void ((x.musteri = t.musteri), (x.satisci = t.satisci)));
-    kapiTeklifiKaydet(k, t, ayarlar);
+    kapiTeklifiKaydet(k, t, ayarlar, aileId);
     setSor(false);
     setKaydedildi(true);
   };
@@ -125,10 +129,10 @@ export function AracKapiPlanlayici() {
     try {
       const tarih = new Date();
       const no = teklif.teklifNo || yeniNo(tarih);
-      kapiTeklifiKaydet(k, { ...teklif, teklifNo: no }, ayarlar, tarih);
+      kapiTeklifiKaydet(k, { ...teklif, teklifNo: no }, ayarlar, aileId, tarih);
       const tuval = document.querySelector<HTMLCanvasElement>("#arac-kapi-3d canvas");
       const resim = tuval ? tuval.toDataURL("image/jpeg", 0.9) : null;
-      const html = aracKapiHtml({ k, t: { ...useAracKapi.getState().teklif, teklifNo: no }, ayarlar, no, tarih, resim });
+      const html = aracKapiHtml({ k, t: { ...store.getState().teklif, teklifNo: no }, ayarlar, no, tarih, resim, aile: aileId });
       if (tur === "yazdir") await htmlYazdir(html);
       else await pdfIndir(html, `AC-Tel-Orgu-Kapi-Teklif-${no.replace(/^AC-/, "")}.pdf`);
     } catch (e) {
@@ -142,7 +146,7 @@ export function AracKapiPlanlayici() {
   return (
     <div className="flex min-h-dvh flex-col lg:h-dvh">
       <UstMenu
-        baslik="Araç Kapısı Planlayıcı"
+        baslik={aile.baslik}
         kaydet={() => kaydet()}
         kayitli={!!teklif.teklifNo}
         kaydedildi={kaydedildi}
@@ -211,8 +215,20 @@ export function AracKapiPlanlayici() {
         <aside className="ince-kaydirma flex flex-col gap-3 p-3 pb-8 sm:p-4 lg:order-1 lg:w-[460px] lg:shrink-0 lg:overflow-y-auto lg:border-r lg:border-white/10">
           <Adim no={1} baslik="Kapı tipi" ipucu="Kapı nasıl açılacak?">
             <div className="grid grid-cols-2 gap-2">
-              {KAPI_TIPLERI.map((t) => (
-                <Kart key={t.id} buyuk secili={k.tip === t.id} onClick={() => guncelle((x) => void (x.tip = t.id))} resim={<TipCizimi tip={t.id} />} ad={t.ad} alt={t.aciklama} />
+              {aile.tipler.map((t) => (
+                <Kart
+                  key={t.id}
+                  buyuk
+                  secili={k.tip === t.id}
+                  onClick={() =>
+                    guncelle((x) => {
+                      x.tip = t.id;
+                      // Yeni tipin ölçü listesinde olmayan genişlik en yakın hazır ölçüye çekilir
+                      const liste = aile.genislikler(x);
+                      if (!liste.includes(x.genislik) && (x.genislik > liste.at(-1)! || x.genislik < liste[0]))
+                        x.genislik = liste.reduce((a, b) => (Math.abs(b - x.genislik) < Math.abs(a - x.genislik) ? b : a));
+                    })
+                  } resim={<TipCizimi tip={t.id} />} ad={t.ad} alt={t.aciklama} />
               ))}
             </div>
           </Adim>
@@ -228,14 +244,14 @@ export function AracKapiPlanlayici() {
           <Adim no={3} baslik="Ölçü" ipucu="Hazır ölçüden seçin ya da yazın">
             <div>
               <Etiket>Geçiş genişliği</Etiket>
-              <Secici degerler={KAPI_GENISLIKLERI} secili={k.genislik} bicim={(v) => `${sayi(v)} m`} onChange={(v) => guncelle((x) => void (x.genislik = v))} />
+              <Secici degerler={aile.genislikler(k)} secili={k.genislik} bicim={(v) => `${sayi(v)} m`} onChange={(v) => guncelle((x) => void (x.genislik = v))} />
             </div>
             <div>
               <Etiket>Yükseklik</Etiket>
-              <Secici degerler={KAPI_YUKSEKLIKLERI} secili={k.yukseklik} bicim={(v) => `${sayi(v)} m`} onChange={(v) => guncelle((x) => void (x.yukseklik = v))} />
+              <Secici degerler={aile.yukseklikler} secili={k.yukseklik} bicim={(v) => `${sayi(v)} m`} onChange={(v) => guncelle((x) => void (x.yukseklik = v))} />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <SayiGiris etiket="Genişlik (serbest)" adim={0.1} min={1} max={20} deger={k.genislik} onChange={(v) => guncelle((x) => void (x.genislik = v))} />
+              <SayiGiris etiket="Genişlik (serbest)" adim={0.1} min={aile.enAz} max={Math.max(...aile.genislikler(k))} deger={k.genislik} onChange={(v) => guncelle((x) => void (x.genislik = v))} />
               <SayiGiris etiket="Yükseklik (serbest)" adim={0.1} min={0.8} max={4} deger={k.yukseklik} onChange={(v) => guncelle((x) => void (x.yukseklik = v))} />
             </div>
           </Adim>
@@ -260,21 +276,37 @@ export function AracKapiPlanlayici() {
             </div>
           </Adim>
 
-          <Adim no={5} baslik="Motor ve aksesuar" ipucu="Otomasyon ve hizmetler">
+          <Adim no={5} baslik={arac ? "Motor ve aksesuar" : "Kilit ve aksesuar"} ipucu={arac ? "Otomasyon ve hizmetler" : "Kilit, geçiş kontrolü ve montaj"}>
             <div className="cam divide-y divide-white/5 rounded-xl px-3 py-1">
+              {!arac && (
+                <>
+                  <Anahtar acik={k.kilit} onChange={(v) => guncelle((x) => void (x.kilit = v))}>
+                    Silindir kilit + kol
+                  </Anahtar>
+                  <Anahtar acik={k.elektrikliKilit} onChange={(v) => guncelle((x) => void (x.elektrikliKilit = v))}>
+                    Elektrikli kilit + kart okuyucu
+                  </Anahtar>
+                </>
+              )}
+              {arac && (
               <Anahtar acik={k.motor} onChange={(v) => guncelle((x) => void (x.motor = v))}>
                 {surgulu(k) ? "Sürgü motoru + 2 kumanda" : `Kanat kol motoru${k.tip === "cift" ? " (2 adet)" : ""}`}
               </Anahtar>
+              )}
               <Anahtar acik={k.mizrak} onChange={(v) => guncelle((x) => void (x.mizrak = v))}>
                 Mızrak uç (kanat üstü)
               </Anahtar>
+              {arac && (
+                <>
               <Anahtar acik={k.fotosel} onChange={(v) => guncelle((x) => void (x.fotosel = v))}>
                 Fotosel (çift)
               </Anahtar>
               <Anahtar acik={k.flasor} onChange={(v) => guncelle((x) => void (x.flasor = v))}>
                 Flaşör lamba
               </Anahtar>
-              {surgulu(k) && (
+                </>
+              )}
+              {arac && surgulu(k) && (
                 <Anahtar acik={k.ray} onChange={(v) => guncelle((x) => void (x.ray = v))}>
                   {k.tip === "surgulu" ? "Ray ve beton temel" : "Konsol taşıyıcı temel"}
                 </Anahtar>
@@ -283,12 +315,12 @@ export function AracKapiPlanlayici() {
                 Montaj
               </Anahtar>
             </div>
-            <p className="text-xs text-[var(--metin-2)]">Fiyatlar Ayarlar → Araç kapısı bölümünden değiştirilir.</p>
+            <p className="text-xs text-[var(--metin-2)]">Fiyatlar Ayarlar → {aile.kisa} bölümünden değiştirilir.</p>
           </Adim>
         </aside>
       </main>
 
-      {ayar && <AyarPaneli ilkBolum="aracKapi" kapat={() => setAyar(false)} />}
+      {ayar && <AyarPaneli ilkBolum={aile.ayarBolum} kapat={() => setAyar(false)} />}
       {liste && <TeklifListesi kapat={() => setListe(false)} />}
       {yeni && (
         <YeniTeklif
@@ -315,7 +347,7 @@ export function AracKapiPlanlayici() {
           yazdir={() => void cikti("yazdir")}
           hazirlanan={hazirlanan}
           kaydet={() => kaydet()}
-          whatsappMetni={() => aracKapiWhatsapp(k, teklif, ayarlar)}
+          whatsappMetni={() => aracKapiWhatsapp(k, teklif, ayarlar, aileId)}
           bos={false}
           kapat={() => setDetay(false)}
         />

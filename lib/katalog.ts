@@ -1,4 +1,4 @@
-import { type AracKapiFiyatlari, VARSAYILAN_ARAC_KAPI_FIYAT } from "./aracKapiFiyat";
+import { type AracKapiFiyatlari, VARSAYILAN_ARAC_KAPI_FIYAT, VARSAYILAN_YAYA_KAPI_FIYAT } from "./aracKapiFiyat";
 // Ürün kataloğu (ölçüler) ve varsayılan satış fiyatları.
 // Satışçı fiyatları Ayarlar penceresinden değiştirir; değişiklikler cihazda saklanır.
 
@@ -165,6 +165,8 @@ export interface Ayarlar {
   kapiArac: number; // ₺ / adet
   /** Araç kapısı planlayıcı fiyatları */
   aracKapi: AracKapiFiyatlari;
+  /** Yaya kapısı planlayıcı fiyatları */
+  yayaKapi: AracKapiFiyatlari;
   montajMetre: number; // ₺ / m
   montajDuvarMetre: number; // ₺ / m, beton duvar üstüne montaj (iskele, kırım, dübel delme)
   temelDirek: number; // ₺ / direk
@@ -234,6 +236,7 @@ export const VARSAYILAN_AYARLAR: Ayarlar = {
   kapiYaya: 6500,
   kapiArac: 18000,
   aracKapi: VARSAYILAN_ARAC_KAPI_FIYAT,
+  yayaKapi: VARSAYILAN_YAYA_KAPI_FIYAT,
   montajMetre: 60,
   montajDuvarMetre: 90,
   temelDirek: 120,
