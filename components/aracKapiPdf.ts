@@ -3,6 +3,8 @@ import { type AracKapi, type KapiAilesi, KAPI_DOLGULARI, aracKapiHesapla, kanatB
 import type { AracKapiTeklifi } from "@/lib/aracKapiStore";
 import { type Ayarlar, direkRengi } from "@/lib/katalog";
 import { B, esc, pdfKabuk } from "./pdf";
+import { kapiOnGorunus, kolDetayi, menteseDetayi } from "./kapiTeknik";
+import { babaAdi } from "@/lib/kapiYapi";
 import { sayi, tl } from "./ui";
 
 function ozellikler(k: AracKapi, alan: number, aile: KapiAilesi): [string, string][] {
@@ -18,9 +20,10 @@ function ozellikler(k: AracKapi, alan: number, aile: KapiAilesi): [string, strin
       ? ([
           ["Kilit", k.kilit ? "Silindir kilit + kol" : "Yok"],
           ["Geçiş kontrolü", k.elektrikliKilit ? "Elektrikli kilit + kart okuyucu" : "Yok"],
-          ["Kolon montajı", k.montajTipi === "flans" ? "Flanşlı ayak, dübelle beton zemine" : "Betona gömme"],
         ] as [string, string][])
       : []),
+    ["Kapı babası", babaAdi(k, aile)],
+    ["Baba montajı", k.montajTipi === "flans" ? "Flanşlı ayak, dübelle beton zemine" : "Betona gömme (50 cm toprak altı)"],
   ];
   if (aile === "arac") satir.push(
     ["Motor", k.motor ? (surgulu(k) ? "Sürgü motoru + 2 kumanda" : `Kanat kol motoru${k.tip === "cift" ? " × 2" : ""} + kumanda`) : "Yok (manuel)"],
@@ -89,10 +92,13 @@ export function aracKapiHtml({
     aile === "yaya" ? ["Kilit", k.elektrikliKilit ? "Elektrikli" : k.kilit ? "Silindir" : "Yok"] : ["Motor", k.motor ? "Var" : "Yok"],
   ];
   const govde = `<div class="ozet">${ozet.map(([a, b]) => `<div><span class="k">${a}</span><b>${esc(b)}</b></div>`).join("")}</div>
-<div class="ikili">
-  <div><div class="baslik">${B("Önden görünüş · ölçülü")}</div><div class="kutu plan">${kapiCizimi(k)}</div></div>
-  <div><div class="baslik">${B("3D görünüm")}</div><div class="kutu">${resim ? `<img src="${resim}" alt="Kapı 3D görünüm" style="object-fit:cover">` : ""}</div></div>
-</div>
+<div class="baslik">${B("Teknik resim · ön görünüş (babalarla, ölçüler cm)")}</div>
+<div class="kutu plan" style="height:auto;padding:6px">${kapiOnGorunus(k, aile)}</div>
+${surgulu(k) ? "" : `<div class="ikili" style="margin-top:8px">
+  <div class="kutu" style="height:auto;padding:4px">${menteseDetayi(aile)}</div>
+  ${k.kilit || k.elektrikliKilit ? `<div class="kutu" style="height:auto;padding:4px">${kolDetayi(k)}</div>` : "<div></div>"}
+</div>`}
+<div class="baslik">${B("3D görünüm")}</div><div class="kutu">${resim ? `<img src="${resim}" alt="Kapı 3D görünüm" style="object-fit:cover">` : ""}</div>
 <div class="baslik">${B("Teknik özellikler")}</div>
 <table class="oz">${ozSatir.join("")}</table>
 <div class="fiyat">

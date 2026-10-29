@@ -27,7 +27,13 @@ export const useAyarlar = create<Durum>()(
     }),
     {
       name: "ac-tel-ayarlar",
-      version: 1,
+      version: 2,
+      // v2: teklif geçerlilik süresi 10 gün (önceki varsayılan 15)
+      migrate: (eski, surum) => {
+        const e = eski as { ayarlar?: { gecerlilikGun?: number } } | undefined;
+        if (surum < 2 && e?.ayarlar) e.ayarlar.gecerlilikGun = 10;
+        return e as never;
+      },
       skipHydration: true, // sunucu ile ilk çizim aynı olsun; Tasarimci yüklenince okur
       partialize: (s) => ({ ayarlar: s.ayarlar }),
       merge: (kayitli, mevcut) => ({

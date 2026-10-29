@@ -14,7 +14,7 @@ const UyduHarita = dynamic(() => import("./UyduHarita").then((m) => m.UyduHarita
 
 // ---------- büyük seçim kartı ----------
 
-function Secenek({
+export function Secenek({
   secili,
   onClick,
   resim,
@@ -51,7 +51,7 @@ function Secenek({
   );
 }
 
-const Izgara = ({ children, sutun = 3 }: { children: ReactNode; sutun?: 2 | 3 | 4 }) => (
+export const Izgara = ({ children, sutun = 3 }: { children: ReactNode; sutun?: 2 | 3 | 4 }) => (
   <div className={`grid grid-cols-2 gap-3 sm:gap-4 ${{ 2: "", 3: "md:grid-cols-3", 4: "md:grid-cols-4" }[sutun]}`}>{children}</div>
 );
 

@@ -1,14 +1,15 @@
 "use client";
 import { Canvas, type ThreeEvent, useFrame, useThree } from "@react-three/fiber";
-import { ContactShadows, Environment, GizmoHelper, GizmoViewcube, Lightformer, OrbitControls, RoundedBox } from "@react-three/drei";
+import { ContactShadows, Environment, GizmoHelper, GizmoViewcube, Grid, Lightformer, OrbitControls, RoundedBox } from "@react-three/drei";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { type AracKapi, kanatBoyu, surgulu } from "@/lib/aracKapi";
-import { DOLGU_CUBUK, MIZRAK_BOY, PORTAL_PROFIL, kanatYapisi } from "@/lib/kapiYapi";
+import { DOLGU_CUBUK, KANAT_YERDEN, kolYuksekligi, menteseYukseklikleri, kanatliKolonBoyu, MIZRAK_BOY, babaKesit, babaTipi, kanatYapisi } from "@/lib/kapiYapi";
 import { direkRengi } from "@/lib/katalog";
 import { useTema } from "@/lib/tema";
-import { betonDokusu, hucreBoyu, telDokusu } from "./dokular";
+import { kapiCekim } from "@/lib/kapiCekim";
+import { hucreBoyu, telDokusu } from "./dokular";
 
 const CERCEVE = 0.06; // kanat çerçeve profili, m
 
@@ -176,14 +177,47 @@ function Kanat({ w, h, k, altKiris = false, duzPanel = false, C = CERCEVE }: { w
 /**
  * Kare kapı kolonu: üstte kapak, altta cıvatalı ayak plakası (flanş) ya da beton dökümü.
  */
-function Kolon({ x, z = 0, h, k = DIREK, mat, gomulu = false, kapak = true }: { x: number; z?: number; h: number; k?: number; mat: THREE.Material; gomulu?: boolean; kapak?: boolean }) {
+const KAPAK = 0.024; // tepe kapağı kalınlığı: kapakla birlikte kapı üst bitimine denk
+const BETON_YAKA = new THREE.MeshStandardMaterial({ color: "#a8a49c", roughness: 0.95 });
+
+function Kolon({
+  x,
+  z = 0,
+  h,
+  k = DIREK,
+  mat,
+  gomulu = false,
+  kapak = true,
+  boru = false,
+}: {
+  x: number;
+  z?: number;
+  h: number;
+  k?: number;
+  mat: THREE.Material;
+  gomulu?: boolean;
+  kapak?: boolean;
+  boru?: boolean;
+}) {
   return (
     <group position={[x, 0, z]}>
-      <RoundedBox args={[k, h, k]} radius={0.008} smoothness={2} material={mat} position={[0, h / 2, 0]} castShadow receiveShadow />
+      {boru ? (
+        <mesh material={mat} position={[0, h / 2, 0]} castShadow receiveShadow>
+          <cylinderGeometry args={[k / 2, k / 2, h, 28]} />
+        </mesh>
+      ) : (
+        <RoundedBox args={[k, h, k]} radius={0.008} smoothness={2} material={mat} position={[0, h / 2, 0]} castShadow receiveShadow />
+      )}
       {/* üst kapak (üstten kuşakla birleşen babada yok) */}
       {kapak && (
         <mesh material={PLASTIK} position={[0, h + 0.012, 0]} castShadow>
-          <boxGeometry args={[k + 0.012, 0.024, k + 0.012]} />
+          {boru ? <cylinderGeometry args={[k / 2 + 0.006, k / 2 + 0.006, 0.024, 28]} /> : <boxGeometry args={[k + 0.012, 0.024, k + 0.012]} />}
+        </mesh>
+      )}
+      {/* betona gömülü babanın dibinde görünen beton yaka */}
+      {gomulu && (
+        <mesh material={BETON_YAKA} position={[0, 0.015, 0]} receiveShadow>
+          <cylinderGeometry args={[k * 1.1 + 0.08, k * 1.1 + 0.1, 0.03, 24]} />
         </mesh>
       )}
       {/* ayak plakası ve 4 cıvata (zemine gömülü kolonda yok) */}
@@ -278,6 +312,19 @@ function MenteseKanat({ y }: { y: number }) {
 /**
  * Kilit kutusu (kanat dikmesine kaynaklı), iki yanda paslanmaz L kol, anahtar göbeği ve rozet.
  */
+/** Kutu profil köşesinde 45° gönye kaynak hattı (dikme ile üst kuşağın birleştiği yüzlerde ince çizgi). */
+function GonyeHatti({ x, y, z, P, yon }: { x: number; y: number; z: number; P: number; yon: 1 | -1 }) {
+  return (
+    <>
+      {[-1, 1].map((yz) => (
+        <mesh key={yz} material={KOYU_METAL} position={[x + yz * (P / 2 + 0.0015), y, z]} rotation={[(yon * Math.PI) / 4, 0, 0]}>
+          <boxGeometry args={[0.002, P * Math.SQRT2, 0.003]} />
+        </mesh>
+      ))}
+    </>
+  );
+}
+
 function KilitKutusu({ x, y }: { x: number; y: number }) {
   return (
     <group position={[x, y, 0]}>
@@ -395,43 +442,36 @@ function YanCit({ x0, x1, h, mat, duz = false }: { x0: number; x1: number; h: nu
   );
 }
 
-function Kapi({ k, acik, yaya = false }: { k: AracKapi; acik: number; yaya?: boolean }) {
+function Kapi({ k, acik, yaya = false, cit = false }: { k: AracKapi; acik: number; yaya?: boolean; cit?: boolean }) {
   const W = k.genislik;
   const H = k.yukseklik;
   const boyali = k.renk !== "galvaniz";
   const kolonMat = useMemo(() => boyaMalzemesi(direkRengi(k.renk).renk, boyali), [k.renk, boyali]);
   const rayMat = useMemo(() => new THREE.MeshStandardMaterial({ color: "#8e98a6", metalness: 0.85, roughness: 0.3 }), []);
-  const betonMat = useMemo(() => {
-    const d = betonDokusu().clone();
-    d.repeat.set(2, 1);
-    d.needsUpdate = true;
-    return new THREE.MeshStandardMaterial({ map: d, color: "#a4a9b0", roughness: 0.95 });
-  }, []);
   const motorMat = useMemo(() => new THREE.MeshPhysicalMaterial({ color: "#3a4048", roughness: 0.4, clearcoat: 0.6 }), []);
   const sol = -W / 2;
-  const kilitY = Math.min(1.05, H * 0.55); // kol yüksekliği
+  const kilitY = kolYuksekligi(k); // kol yüksekliği
   const L = kanatBoyu(k);
   const z = 0.12; // sürgülü kanat çit hattının iç yanında kayar
   const kanatAci = acik * 1.45;
   // Yaya ve kanatlı kapılarda menteşe: altta, üstte; 1,6 m üstü kanatta ortada bir tane daha
-  const menteseY = H > 1.6 ? [0.22, H / 2, H - 0.14] : [0.22, H - 0.14];
+  const menteseY = menteseYukseklikleri(k, "arac");
   const yan = Math.max(1.6, Math.min(3, W * 0.5)); // yan çit boyu
   // Yaya kapısı (Setka tipi): ince gömülü kolon, kanat yerden ~10 cm yukarıda, düz çift telli panel
-  const KOL = yaya ? 0.07 : DIREK;
-  const kanatY = yaya ? 0.1 : 0.06;
-  const yayaMY = [0.18, H - 0.18];
+  const aile = yaya ? "yaya" : "arac";
+  const KOL = babaKesit(k, aile); // kapı babası kesiti (Ayarlar değil, kapının kendi seçimi)
+  const boru = babaTipi(k) === "boru";
+  const gom = k.montajTipi !== "flans";
+  const kanatY = KANAT_YERDEN; // kanat çerçevesi zeminden 5 cm yukarıda başlar
+  const yayaMY = menteseYukseklikleri(k, "yaya");
 
   return (
     <group>
-      {/* Beton zemin şeridi ve kapı önü */}
-      <mesh material={betonMat} rotation={[-Math.PI / 2, 0, 0]} position={[surgulu(k) ? -W * 0.5 : 0, 0.002, 0.4]} receiveShadow>
-        <planeGeometry args={[(surgulu(k) ? W * 2.2 : W + 1.4) + yan * 2, 3]} />
-      </mesh>
 
       {/* Yan çitler: sağda kolondan sonra; solda kanatlıda kolondan, sürgülüde park yerinin ötesine */}
-      <YanCit x0={W / 2 + KOL} x1={W / 2 + KOL + yan} h={yaya ? H + 0.1 : Math.min(H, 2)} mat={kolonMat} duz={yaya} />
-      <YanCit x0={sol - KOL - (surgulu(k) ? L : 0)} x1={sol - KOL - (surgulu(k) ? L : 0) - yan} h={yaya ? H + 0.1 : Math.min(H, 2)} mat={kolonMat} duz={yaya} />
-      {surgulu(k) && <YanCit x0={sol - DIREK} x1={sol - DIREK - L} h={Math.min(H, 2)} mat={kolonMat} />}
+      {cit && <YanCit x0={W / 2 + KOL} x1={W / 2 + KOL + yan} h={yaya ? H + 0.1 : Math.min(H, 2)} mat={kolonMat} duz={yaya} />}
+      {cit && <YanCit x0={sol - KOL - (surgulu(k) ? L : 0)} x1={sol - KOL - (surgulu(k) ? L : 0) - yan} h={yaya ? H + 0.1 : Math.min(H, 2)} mat={kolonMat} duz={yaya} />}
+      {cit && surgulu(k) && <YanCit x0={sol - DIREK} x1={sol - DIREK - L} h={Math.min(H, 2)} mat={kolonMat} />}
 
       {/* Kolonlar */}
       {surgulu(k) ? (
@@ -440,7 +480,7 @@ function Kapi({ k, acik, yaya = false }: { k: AracKapi; acik: number; yaya?: boo
               kuşaklarla birleşik; karşı taraf: 2'li karşılama babası, üstten birleşik.
               Baba yüksekliği = kanat üstü (mızrak varsa mızrak ucu) + 5 cm boşluk + üst profil */}
           {(() => {
-            const P = PORTAL_PROFIL;
+            const P = KOL;
             const kanatAlt = k.tip === "konsol" ? 0.32 : 0.12;
             const ustKenar = kanatAlt + H + (k.mizrak ? MIZRAK_BOY : 0);
             const babaH = ustKenar + 0.05 + P;
@@ -449,7 +489,7 @@ function Kapi({ k, acik, yaya = false }: { k: AracKapi; acik: number; yaya?: boo
             const zler = [z - zAra, z + zAra];
             return (
               <>
-                {xler.flatMap((x) => zler.map((zz) => <Kolon key={`${x}${zz}`} x={x} z={zz} h={babaH - P} k={P} mat={kolonMat} kapak={false} />))}
+                {xler.flatMap((x) => zler.map((zz) => <Kolon key={`${x}${zz}`} x={x} z={zz} h={babaH - P} k={P} mat={kolonMat} kapak={false} boru={boru} gomulu={gom} />))}
                 {/* üst birleşim: z yönünde (kanadın üstünden geçen) ve x yönünde kuşaklar */}
                 {xler.map((x) => (
                   <RoundedBox key={`zk${x}`} args={[P, P, zAra * 2 + P]} radius={0.006} smoothness={2} material={kolonMat} position={[x, babaH - P / 2, z]} castShadow />
@@ -460,8 +500,12 @@ function Kapi({ k, acik, yaya = false }: { k: AracKapi; acik: number; yaya?: boo
                 <KilavuzMakara x={sol - P / 2} y={kanatAlt + H - 0.03} z={z} />
                 {/* karşılama babası: 2 dikme + üst kuşak + kanat ucunu karşılayan arka levha */}
                 {zler.map((zz) => (
-                  <Kolon key={`k${zz}`} x={W / 2 + P / 2 + 0.02} z={zz} h={babaH - P} k={P} mat={kolonMat} />
+                  <Kolon key={`k${zz}`} x={W / 2 + P / 2 + 0.02} z={zz} h={babaH - P} k={P} mat={kolonMat} kapak={false} boru={boru} gomulu={gom} />
                 ))}
+                {/* dikme–üst kuşak birleşimleri 45° gönye kesimle kaynaklı: köşelerde gönye hattı */}
+                {[...xler, W / 2 + P / 2 + 0.02].flatMap((x) =>
+                  zler.map((zz, i) => <GonyeHatti key={`g${x}${zz}`} x={x} y={babaH - P / 2} z={zz} P={P} yon={i ? 1 : -1} />),
+                )}
                 <RoundedBox args={[P, P, zAra * 2 + P]} radius={0.006} smoothness={2} material={kolonMat} position={[W / 2 + P / 2 + 0.02, babaH - P / 2, z]} castShadow />
                 <mesh material={KOYU_METAL} position={[W / 2 + P + 0.03, kanatAlt + H / 2, z]} castShadow>
                   <boxGeometry args={[0.02, H * 0.9, zAra * 2 - P]} />
@@ -473,15 +517,8 @@ function Kapi({ k, acik, yaya = false }: { k: AracKapi; acik: number; yaya?: boo
         </>
       ) : (
         <>
-          <Kolon x={sol - KOL / 2} h={H + (yaya ? 0.28 : 0.15)} k={KOL} mat={kolonMat} gomulu={yaya && k.montajTipi !== "flans"} />
-          <Kolon x={W / 2 + KOL / 2} h={H + (yaya ? 0.28 : 0.15)} k={KOL} mat={kolonMat} gomulu={yaya && k.montajTipi !== "flans"} />
-          {/* Betona gömülü kolonun dibinde görünen beton yaka */}
-          {yaya && k.montajTipi !== "flans" &&
-            [sol - KOL / 2, W / 2 + KOL / 2].map((x) => (
-              <mesh key={x} material={betonMat} position={[x, 0.015, 0]} receiveShadow>
-                <cylinderGeometry args={[0.15, 0.17, 0.03, 20]} />
-              </mesh>
-            ))}
+          <Kolon x={sol - KOL / 2} h={kanatliKolonBoyu(k) - KAPAK} k={KOL} mat={kolonMat} gomulu={gom} boru={boru} />
+          <Kolon x={W / 2 + KOL / 2} h={kanatliKolonBoyu(k) - KAPAK} k={KOL} mat={kolonMat} gomulu={gom} boru={boru} />
         </>
       )}
 
@@ -568,7 +605,7 @@ function Kapi({ k, acik, yaya = false }: { k: AracKapi; acik: number; yaya?: boo
 
       {k.tip === "cift" && !yaya && (
         <>
-          <group position={[sol, 0.06, 0]} rotation={[0, -kanatAci, 0]}>
+          <group position={[sol, kanatY, 0]} rotation={[0, -kanatAci, 0]}>
             <Kanat w={W / 2 - 0.015} h={H} k={k} />
             {menteseY.map((y) => (
               <MenteseKanat key={y} y={y} />
@@ -576,7 +613,7 @@ function Kapi({ k, acik, yaya = false }: { k: AracKapi; acik: number; yaya?: boo
             {k.kilit && <KilitKutusu x={W / 2 - 0.05} y={kilitY} />}
             <YerSurgusu x={W / 2 - 0.12} aci={0} />
           </group>
-          <group position={[W / 2, 0.06, 0]} rotation={[0, Math.PI + kanatAci, 0]}>
+          <group position={[W / 2, kanatY, 0]} rotation={[0, Math.PI + kanatAci, 0]}>
             <group scale={[1, 1, -1]}>
               <Kanat w={W / 2 - 0.015} h={H} k={k} />
               {menteseY.map((y) => (
@@ -587,10 +624,10 @@ function Kapi({ k, acik, yaya = false }: { k: AracKapi; acik: number; yaya?: boo
           </group>
           {menteseY.map((y) => (
             <group key={y}>
-              <group position={[sol, 0.06, 0]}>
+              <group position={[sol, kanatY, 0]}>
                 <Mentese y={y} kolonYuz={0} />
               </group>
-              <group position={[W / 2, 0.06, 0]}>
+              <group position={[W / 2, kanatY, 0]}>
                 <Mentese y={y} kolonYuz={0} />
               </group>
             </group>
@@ -630,7 +667,6 @@ function Kapi({ k, acik, yaya = false }: { k: AracKapi; acik: number; yaya?: boo
               <AyarliMenteseKanat key={y} y={y} />
             ))}
             {k.kilit && <KilitKutusu x={W / 2 - 0.07} y={kilitY} />}
-            <YerSurgusu x={W / 2 - 0.15} aci={0} />
           </group>
           <group position={[W / 2 - 0.03, kanatY, 0]} rotation={[0, Math.PI + kanatAci, 0]}>
             <group scale={[1, 1, -1]}>
@@ -638,6 +674,8 @@ function Kapi({ k, acik, yaya = false }: { k: AracKapi; acik: number; yaya?: boo
               {yayaMY.map((y) => (
                 <AyarliMenteseKanat key={y} y={y} />
               ))}
+              {/* sabit (pasif) kanat yer sürgüsüyle zemine kilitlenir; kilit diğer kanatta */}
+              <YerSurgusu x={W / 2 - 0.15} aci={0} />
             </group>
           </group>
           {yayaMY.map((y) => (
@@ -655,7 +693,7 @@ function Kapi({ k, acik, yaya = false }: { k: AracKapi; acik: number; yaya?: boo
 
       {k.tip === "tek" && !yaya && (
         <>
-          <group position={[sol, 0.06, 0]} rotation={[0, -kanatAci, 0]}>
+          <group position={[sol, kanatY, 0]} rotation={[0, -kanatAci, 0]}>
             <Kanat w={W - 0.015} h={H} k={k} />
             {menteseY.map((y) => (
               <MenteseKanat key={y} y={y} />
@@ -717,8 +755,8 @@ function Kapi({ k, acik, yaya = false }: { k: AracKapi; acik: number; yaya?: boo
           </group>
         ))}
       {k.fotosel &&
-        [sol - DIREK / 2, W / 2 + DIREK / 2].map((x) => (
-          <group key={x} position={[x, 0.5, DIREK / 2 + 0.03]}>
+        [sol - KOL / 2, W / 2 + KOL / 2].map((x) => (
+          <group key={x} position={[x, 0.5, KOL / 2 + 0.03]}>
             <RoundedBox args={[0.06, 0.11, 0.045]} radius={0.01} smoothness={3} material={PLASTIK} />
             <mesh position={[0, 0.02, 0.024]}>
               <circleGeometry args={[0.012, 16]} />
@@ -727,7 +765,7 @@ function Kapi({ k, acik, yaya = false }: { k: AracKapi; acik: number; yaya?: boo
           </group>
         ))}
       {k.flasor && (
-        <group position={[sol - DIREK / 2, surgulu(k) ? (k.tip === "konsol" ? 0.32 : 0.12) + H + (k.mizrak ? MIZRAK_BOY : 0) + 0.05 + PORTAL_PROFIL + 0.02 : H + 0.18, surgulu(k) ? z : 0]}>
+        <group position={[sol - KOL / 2, surgulu(k) ? (k.tip === "konsol" ? 0.32 : 0.12) + H + (k.mizrak ? MIZRAK_BOY : 0) + 0.05 + KOL + 0.02 : kanatliKolonBoyu(k) + 0.03, surgulu(k) ? z : 0]}>
           <mesh material={PLASTIK} position={[0, 0, 0]}>
             <cylinderGeometry args={[0.06, 0.07, 0.04, 20]} />
           </mesh>
@@ -747,6 +785,65 @@ type Gorunum = { tur: "kose" | "genel" | "yon"; yon?: [number, number, number]; 
  * Kamera geçişi: Köşe (kilit/menteşe yakın çekim), Tümü (önden açılı) ya da küpten seçilen yön
  * (kapının ortasına hizalı). Kullanıcı sürükleyince animasyon bırakılır.
  */
+/**
+ * Teklif resmi: ayrı bir kamerayla, kapı + babaların sınır kutusuna sıkı oturacak şekilde çeker.
+ * Yalnız ana sahne çizilir; görünüm küpü (GizmoHelper ayrı sahnede) resme girmez. Zemin düzlemleri sığdırmaya katılmaz.
+ */
+function TeklifCekimi({ hedef }: { hedef: React.RefObject<THREE.Group | null> }) {
+  const { gl, scene, camera } = useThree();
+  useEffect(() => {
+    kapiCekim.al = (en, boy) => {
+      const g = hedef.current;
+      if (!g) return null;
+      g.updateWorldMatrix(true, true);
+      const kutu = new THREE.Box3();
+      g.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh || !m.visible || m.geometry.type === "PlaneGeometry") return;
+        kutu.expandByObject(m);
+      });
+      if (kutu.isEmpty()) return null;
+      const merkez = kutu.getCenter(new THREE.Vector3());
+      const cam = new THREE.PerspectiveCamera(32, en / boy, 0.05, 500);
+      // Ekrandaki genel görünümle aynı yön: hafif sağdan, biraz yukarıdan
+      const yon = new THREE.Vector3(0.28, 0.32, 1).normalize();
+      // Önce yaklaşık konuma koy, sonra 8 köşeyi ekrana izdüşürüp sığdır
+      const kose = [0, 1].flatMap((a) => [0, 1].flatMap((b) => [0, 1].map((c) => new THREE.Vector3(a ? kutu.max.x : kutu.min.x, b ? kutu.max.y : kutu.min.y, c ? kutu.max.z : kutu.min.z))));
+      let uzak = kutu.getSize(new THREE.Vector3()).length() * 1.6;
+      for (let i = 0; i < 4; i++) {
+        cam.position.copy(merkez).addScaledVector(yon, uzak);
+        cam.lookAt(merkez);
+        cam.updateMatrixWorld();
+        let m = 0;
+        for (const p of kose) {
+          const q = p.clone().project(cam);
+          m = Math.max(m, Math.abs(q.x), Math.abs(q.y));
+        }
+        uzak *= m / 0.94; // kenarlarda %3 pay
+      }
+      cam.position.copy(merkez).addScaledVector(yon, uzak);
+      cam.lookAt(merkez);
+      const eski = gl.getSize(new THREE.Vector2());
+      const oran = gl.getPixelRatio();
+      gl.setPixelRatio(1);
+      gl.setSize(en, boy, false);
+      // Gölgelendiriciler önce derlensin, iki kez çiz: ilk çizimde boş (siyah) kare çıkmasın
+      gl.compile(scene, cam);
+      gl.render(scene, cam);
+      gl.render(scene, cam);
+      const url = gl.domElement.toDataURL("image/jpeg", 0.92);
+      gl.setPixelRatio(oran);
+      gl.setSize(eski.x, eski.y, false);
+      gl.render(scene, camera);
+      return url;
+    };
+    return () => {
+      kapiCekim.al = null;
+    };
+  }, [gl, scene, camera, hedef]);
+  return null;
+}
+
 function KapiKamera({ W, H, gorunum, uzak }: { W: number; H: number; gorunum: Gorunum; uzak: number }) {
   const { camera, controls } = useThree() as unknown as {
     camera: THREE.PerspectiveCamera;
@@ -789,10 +886,13 @@ export default function AracKapiSahne({ kapi, acik, yaya = false }: { kapi: Arac
   const W = kapi.genislik;
   const uzak = Math.max(W < 3 ? 3.6 : 6, W * 1.25 + 3);
   const [gorunum, setGorunum] = useState<Gorunum>({ tur: "genel", n: 0 });
+  // Yan çit panelleri varsayılan gizli: yalnız kapı ve kolonlar görünür
+  const [cit, setCit] = useState(false);
+  const kapiRef = useRef<THREE.Group>(null);
   const sec = (tur: Gorunum["tur"], yon?: [number, number, number]) => setGorunum((g) => ({ tur, yon, n: g.n + 1 }));
   return (
     <div className="relative h-full w-full">
-    <Canvas shadows dpr={[1, 2]} gl={{ preserveDrawingBuffer: true, antialias: true }} camera={{ fov: 40, near: 0.05, far: 500, position: [W * 0.25, kapi.yukseklik + 1.2, uzak] }}>
+    <Canvas shadows dpr={[1, 2]} gl={{ preserveDrawingBuffer: true, antialias: true }} camera={{ fov: 40, near: 0.1, far: 500, position: [W * 0.25, kapi.yukseklik + 1.2, uzak] }}>
       <color attach="background" args={[koyu ? "#0b1a33" : "#dde6f1"]} />
       <fog attach="fog" args={[koyu ? "#0b1a33" : "#dde6f1", uzak * 2.5, uzak * 6]} />
       <hemisphereLight args={["#dfe9ff", "#3a3328", 0.55]} />
@@ -814,12 +914,32 @@ export default function AracKapiSahne({ kapi, acik, yaya = false }: { kapi: Arac
         <Lightformer form="rect" intensity={0.8} color="#ffe2c4" position={[9, 2, -5]} rotation-y={-Math.PI / 2} scale={[12, 4, 1]} />
       </Environment>
       {/* Zemin: asfalt / toprak tonu */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.001, 0]} receiveShadow>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.03, 0]} receiveShadow>
         <planeGeometry args={[200, 200]} />
         <meshStandardMaterial color={koyu ? "#2b3138" : "#7d8691"} roughness={1} />
       </mesh>
+      {/* Zemin düzlemi belirgin: 1 m'lik ana, 25 cm'lik ara çizgiler */}
+      {/* Izgara zeminin 3 cm üstünde, derinlik yazmaz: çevirirken zeminle çakışıp titremez */}
+      <Grid
+        renderOrder={1}
+        onUpdate={(m: THREE.Mesh) => void ((m.material as THREE.Material).depthWrite = false)}
+        position={[0, 0, 0]}
+        args={[200, 200]}
+        cellSize={0.25}
+        cellThickness={0.6}
+        cellColor={koyu ? "#4b5563" : "#6b7280"}
+        sectionSize={1}
+        sectionThickness={1.2}
+        sectionColor={koyu ? "#94a3b8" : "#334155"}
+        fadeDistance={uzak * 3}
+        fadeStrength={1.5}
+        infiniteGrid
+      />
       <ContactShadows position={[0, 0.004, 0]} opacity={0.45} scale={W * 4 + 8} blur={2.4} far={3} resolution={1024} />
-      <Kapi k={kapi} acik={acik} yaya={yaya} />
+      <group ref={kapiRef}>
+        <Kapi k={kapi} acik={acik} yaya={yaya} cit={cit} />
+      </group>
+      <TeklifCekimi hedef={kapiRef} />
       <OrbitControls makeDefault enableDamping target={[-W * 0.15, kapi.yukseklik / 2, 0]} maxPolarAngle={Math.PI / 2.05} minDistance={0.8} maxDistance={60} />
       <KapiKamera W={W} H={kapi.yukseklik} gorunum={gorunum} uzak={uzak} />
       {/* Görünüm küpü: çit planlayıcıdakiyle aynı; yüzüne tıklayınca kamera o yönden bakar */}
@@ -842,6 +962,15 @@ export default function AracKapiSahne({ kapi, acik, yaya = false }: { kapi: Arac
       </GizmoHelper>
     </Canvas>
       <div className="absolute bottom-3 left-3 z-20 flex flex-col gap-1.5">
+        <button
+          type="button"
+          title="Kapının yanındaki çit panellerini göster / gizle"
+          aria-pressed={cit}
+          onClick={() => setCit(!cit)}
+          className={`cam rounded-lg px-2.5 py-1.5 text-xs font-bold transition hover:bg-[var(--yuzey-2)] ${cit ? "ring-1 ring-ac-kirmizi" : ""}`}
+        >
+          Yan çit {cit ? "✓" : ""}
+        </button>
         {(
           [
             ["kose", "Köşe", "Kilit ve menteşe tarafından yakın görünüm"],

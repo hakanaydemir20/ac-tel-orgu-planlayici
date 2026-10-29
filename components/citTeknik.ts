@@ -1,7 +1,7 @@
 // Çit direği teknik resmi (teknik çizim kurallarına göre): ölçülü yan görünüş, kaş ve
 // payanda açıları, birleşim detayı (Detay A) ve profil kesiti (Kesit B-B).
 import { direkAcilari } from "@/lib/uretim";
-import { direkBoyu, gommePayi, kasUzunlugu } from "@/lib/hesap";
+import { KAS_DELIKLERI, KAS_DELIK_CAP, direkBoyu, gommePayi, kasUzunlugu } from "@/lib/hesap";
 import { direkTipi, ustOlcu } from "@/lib/katalog";
 import type { Tasarim } from "@/lib/tasarim";
 
@@ -101,6 +101,20 @@ export function direkTeknikResim(t: Tasarim) {
     g += eksen(gx, ustY, kasUcX + (kasUcX - gx) * 0.1, kasUcY - (ustY - kasUcY) * 0.1);
     g += aciYayi(gx, ustY, kas * s * 0.55, -90, -90 + A.kasAci, `${A.kasAci}°`);
     g += olcu(gx, ustY, kasUcX, kasUcY, 16, `kaş ${cm(kas)}`);
+    // kaş ucu profil kapağı (kola dik) ve gergi teli delikleri
+    {
+      const ux = (kasUcX - gx) / (kas * s), uy = (kasUcY - ustY) / (kas * s);
+      const nx = -uy, ny = ux;
+      const kx = kasUcX + ux * 2, ky = kasUcY + uy * 2;
+      g += `<path d="M${kx + nx * (pw / 2 + 1.5)} ${ky + ny * (pw / 2 + 1.5)} L${kx - nx * (pw / 2 + 1.5)} ${ky - ny * (pw / 2 + 1.5)}" stroke="#1f2937" stroke-width="3.2"/>`;
+      g += `<text x="${kx + 6}" y="${ky - 2}" font-size="7.5" fill="${OLCU}" style="${F}">kapak</text>`;
+      for (const f of KAS_DELIKLERI) {
+        const hx = gx + ux * kas * s * f, hy = ustY + uy * kas * s * f;
+        g += `<circle cx="${hx}" cy="${hy}" r="${Math.max(1.6, (KAS_DELIK_CAP * s) / 2)}" fill="#fff" stroke="${CIZGI}" stroke-width=".9"/>`;
+      }
+      g += `<text x="${kx + 6}" y="${ky + 8}" font-size="7.5" fill="${VURGU}" font-weight="700" style="${F}">${KAS_DELIKLERI.length} × Ø${Math.round(KAS_DELIK_CAP * 1000)} delik</text>`;
+      g += `<text x="${kx + 6}" y="${ky + 17}" font-size="7" fill="${OLCU}" style="${F}">kaş dibinden ${KAS_DELIKLERI.map((f) => cm(kas * f)).join(" / ")}</text>`;
+    }
     // Detay A işareti
     g += `<circle cx="${gx}" cy="${ustY}" r="${pw * 1.6}" fill="none" stroke="${VURGU}" stroke-width=".8" stroke-dasharray="3 2"/><text x="${gx - pw * 1.6 - 4}" y="${ustY - pw * 1.2}" font-size="10" font-weight="700" fill="${VURGU}" text-anchor="end" style="${F}">A</text>`;
   }

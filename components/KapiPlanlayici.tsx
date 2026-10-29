@@ -1,7 +1,7 @@
 "use client";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
-import { KAPI_DOLGULARI, type KapiAilesi, aracKapiHesapla, surgulu } from "@/lib/aracKapi";
+import { KAPI_DOLGULARI, type KapiAilesi, aracKapiHesapla, azamiGenislik, surgulu } from "@/lib/aracKapi";
 import { AILELER } from "@/lib/kapiAilesi";
 import { kapiFiyatlari, kapiStore, kapiTeklifiKaydet } from "@/lib/aracKapiStore";
 import { useAyarlar } from "@/lib/ayarlar";
@@ -14,9 +14,12 @@ import { TeklifListesi } from "./TeklifListesi";
 import { TeklifPenceresi } from "./TeklifPenceresi";
 import { pdfIndir, yazdir as htmlYazdir } from "./TeklifYazdir";
 import { UstMenu } from "./UstMenu";
+import { KapiSoruCevap } from "./KapiSoruCevap";
+import { kapiCekim } from "@/lib/kapiCekim";
+import { BABA_BORULARI, BABA_PROFILLERI, babaOlcuAdi, babaOlcusu, babaTipi } from "@/lib/kapiYapi";
 import { UretimPenceresi } from "./UretimPenceresi";
 import { uretimHtml } from "./uretimPdf";
-import { goenyeDetayi, kapiOnGorunus, kapiUstGorunus } from "./kapiTeknik";
+import { goenyeDetayi, kapiOnGorunus, kapiUstGorunus, kolDetayi, menteseDetayi } from "./kapiTeknik";
 import { kapiUretimi } from "@/lib/uretim";
 import { YeniTeklif } from "./YeniTeklif";
 import { DIREK_RENKLERI } from "@/lib/katalog";
@@ -29,7 +32,7 @@ const Sahne = dynamic(() => import("./sahne/AracKapiSahne"), {
 });
 
 /** Basit tip çizimleri (kart resmi). */
-function TipCizimi({ tip }: { tip: string }) {
+export function TipCizimi({ tip }: { tip: string }) {
   return (
     <svg viewBox="0 0 80 48" className="h-full w-full" aria-hidden>
       <path d="M4 44h72" stroke="currentColor" strokeOpacity="0.4" strokeWidth="2" />
@@ -66,7 +69,7 @@ function TipCizimi({ tip }: { tip: string }) {
   );
 }
 
-function DolguCizimi({ dolgu }: { dolgu: string }) {
+export function DolguCizimi({ dolgu }: { dolgu: string }) {
   return (
     <svg viewBox="0 0 80 48" className="h-full w-full" aria-hidden>
       <defs>
@@ -103,6 +106,7 @@ export function KapiPlanlayici({ aile: aileId }: { aile: KapiAilesi }) {
   const [yeni, setYeni] = useState(false);
   const [sor, setSor] = useState(false);
   const [uretim, setUretim] = useState(false);
+  const [sihirbaz, setSihirbaz] = useState(false);
   const [kaydedildi, setKaydedildi] = useState(false);
   const [hazirlanan, setHazirlanan] = useState<"yazdir" | "indir" | null>(null);
 
@@ -135,8 +139,11 @@ export function KapiPlanlayici({ aile: aileId }: { aile: KapiAilesi }) {
       const tarih = new Date();
       const no = teklif.teklifNo || yeniNo(tarih);
       kapiTeklifiKaydet(k, { ...teklif, teklifNo: no }, ayarlar, aileId, tarih);
-      const tuval = document.querySelector<HTMLCanvasElement>("#arac-kapi-3d canvas");
-      const resim = tuval ? tuval.toDataURL("image/jpeg", 0.9) : null;
+      // Teklif resmi: görünüm küpü olmadan, kapı kutuyu dolduracak yakınlıkta (PDF kutusu 3:2)
+      // 3D sahne henüz yüklenmediyse (sayfa yeni açıldı) hazır olmasını en fazla 15 sn bekle
+      for (let i = 0; i < 150 && !kapiCekim.al; i++) await new Promise((r) => setTimeout(r, 100));
+      if (kapiCekim.al) await new Promise((r) => setTimeout(r, 300)); // dokular / ortam ışığı otursun
+      const resim = kapiCekim.al?.(1200, 800) ?? null;
       const html = aracKapiHtml({ k, t: { ...store.getState().teklif, teklifNo: no }, ayarlar, no, tarih, resim, aile: aileId });
       if (tur === "yazdir") await htmlYazdir(html);
       else await pdfIndir(html, `AC-Tel-Orgu-Kapi-Teklif-${no.replace(/^AC-/, "")}.pdf`);
@@ -152,6 +159,7 @@ export function KapiPlanlayici({ aile: aileId }: { aile: KapiAilesi }) {
     <div className="flex min-h-dvh flex-col lg:h-dvh">
       <UstMenu
         baslik={aile.baslik}
+        soruCevap={() => setSihirbaz(true)}
         kaydet={() => kaydet()}
         kayitli={!!teklif.teklifNo}
         kaydedildi={kaydedildi}
@@ -164,6 +172,8 @@ export function KapiPlanlayici({ aile: aileId }: { aile: KapiAilesi }) {
         ayarlar={() => setAyar(true)}
         uretim={() => setUretim(true)}
       />
+
+      {sihirbaz && <KapiSoruCevap aile={aileId} kapi={k} guncelle={guncelle} toplam={s.toplam} kapat={() => setSihirbaz(false)} />}
 
       <main className="flex min-h-0 flex-1 flex-col lg:flex-row">
         <div className="relative h-[46vh] shrink-0 lg:order-2 lg:h-auto lg:flex-1">
@@ -257,7 +267,7 @@ export function KapiPlanlayici({ aile: aileId }: { aile: KapiAilesi }) {
               <Secici degerler={aile.yukseklikler} secili={k.yukseklik} bicim={(v) => `${sayi(v)} m`} onChange={(v) => guncelle((x) => void (x.yukseklik = v))} />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <SayiGiris etiket="Genişlik (serbest)" adim={0.1} min={aile.enAz} max={Math.max(...aile.genislikler(k))} deger={k.genislik} onChange={(v) => guncelle((x) => void (x.genislik = v))} />
+              <SayiGiris etiket="Genişlik (serbest)" adim={0.1} min={aile.enAz} max={azamiGenislik(k, aileId)} deger={k.genislik} onChange={(v) => guncelle((x) => void (x.genislik = v))} />
               <SayiGiris etiket="Yükseklik (serbest)" adim={0.1} min={0.8} max={4} deger={k.yukseklik} onChange={(v) => guncelle((x) => void (x.yukseklik = v))} />
             </div>
           </Adim>
@@ -282,19 +292,40 @@ export function KapiPlanlayici({ aile: aileId }: { aile: KapiAilesi }) {
             </div>
           </Adim>
 
-          <Adim no={5} baslik={arac ? "Motor ve aksesuar" : "Kilit ve aksesuar"} ipucu={arac ? "Otomasyon ve hizmetler" : "Kilit, geçiş kontrolü ve montaj"}>
+          <Adim no={5} baslik="Kapı babası" ipucu="Malzeme, ölçü ve zemine sabitleme">
+            <div>
+              <Etiket>Malzeme</Etiket>
+              <Secici
+                degerler={["profil", "boru"] as const}
+                secili={babaTipi(k)}
+                bicim={(v) => (v === "boru" ? "Boru" : "Kutu profil")}
+                onChange={(v) => guncelle((x) => void ((x.babaOlcu = babaOlcusu({ ...x, babaTip: v }, aileId)), (x.babaTip = v)))}
+              />
+            </div>
+            <div>
+              <Etiket>{babaTipi(k) === "boru" ? "Boru dış çapı (mm)" : "Profil ölçüsü (mm)"}</Etiket>
+              <Secici
+                degerler={babaTipi(k) === "boru" ? BABA_BORULARI : BABA_PROFILLERI}
+                secili={babaOlcusu(k, aileId)}
+                bicim={(v) => babaOlcuAdi(babaTipi(k), v).replace(" kutu profil", "").replace(" boru", "")}
+                onChange={(v) => guncelle((x) => void (x.babaOlcu = v))}
+              />
+            </div>
+            <div>
+              <Etiket>Montaj</Etiket>
+              <Secici
+                degerler={["gomme", "flans"] as const}
+                secili={k.montajTipi}
+                bicim={(v) => (v === "flans" ? "Flanşlı (beton zemin)" : "Betona gömme (+50 cm)")}
+                onChange={(v) => guncelle((x) => void (x.montajTipi = v))}
+              />
+            </div>
+          </Adim>
+
+          <Adim no={6} baslik={arac ? "Motor ve aksesuar" : "Kilit ve aksesuar"} ipucu={arac ? "Otomasyon ve hizmetler" : "Kilit, geçiş kontrolü ve montaj"}>
             <div className="cam divide-y divide-white/5 rounded-xl px-3 py-1">
               {!arac && (
                 <>
-                  <div className="py-2.5">
-                    <div className="mb-1.5 text-sm font-semibold">Kolon montajı</div>
-                    <Secici
-                      degerler={["gomme", "flans"] as const}
-                      secili={k.montajTipi}
-                      bicim={(v) => (v === "flans" ? "Flanşlı (beton zemin)" : "Betona gömme")}
-                      onChange={(v) => guncelle((x) => void (x.montajTipi = v))}
-                    />
-                  </div>
                   <Anahtar acik={k.kilit} onChange={(v) => guncelle((x) => void (x.kilit = v))}>
                     Silindir kilit + kol
                   </Anahtar>
@@ -351,6 +382,8 @@ export function KapiPlanlayici({ aile: aileId }: { aile: KapiAilesi }) {
               ["Ön görünüş · ölçülü (cm)", kapiOnGorunus(k, aileId)],
               ["Üstten görünüş", kapiUstGorunus(k, aileId)],
               ["Çerçeve köşesi · 45° gönye", goenyeDetayi(aileId)],
+              ...(surgulu(k) ? [] : ([["Detay M · menteşe", menteseDetayi(aileId)]] as [string, string][])),
+              ...(!surgulu(k) && (k.kilit || k.elektrikliKilit) ? ([["Detay K · kilit ve kol", kolDetayi(k)]] as [string, string][]) : []),
             ],
           });
           return <UretimPenceresi plan={plan} html={html} dosyaAdi={`AC-Tel-Orgu-Uretim-${aile.kisa.replace(" ", "-")}-${teklif.teklifNo || "taslak"}.pdf`} kapat={() => setUretim(false)} />;

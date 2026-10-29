@@ -1,4 +1,5 @@
 // PDF teklif: tek A4 dikey sayfalık HTML üretir; hem yazdırılır hem PDF dosyası olarak indirilir.
+import { useAyarlar } from "@/lib/ayarlar";
 import type { Sonuc } from "@/lib/hesap";
 import { direkBoyu, gommePayi, kasUzunlugu } from "@/lib/hesap";
 import { Ayarlar, direkRengi, direkTipi, telTipi, ustOlcu } from "@/lib/katalog";
@@ -137,13 +138,39 @@ export function telCizimi(t: Tasarim) {
   const renk = t.tel.kaplama === "pvc" ? "#2f7a4a" : "#7d8794";
   const g = 26; // çizimde bir göz, px
   let desen = "";
-  if (tip === "kafes")
-    for (let i = -6; i < 12; i++)
-      desen += `<line x1="${i * g}" y1="0" x2="${i * g + 130}" y2="130" stroke="${renk}" stroke-width="2"/><line x1="${i * g + 130}" y1="0" x2="${i * g}" y2="130" stroke="${renk}" stroke-width="2"/>`;
+  // Kafes tel (çit örgüsü): dikey zikzak teller, komşu tellerle bükümlerinden birbirine geçer;
+  // kare göz 45° döndürülmüş, kenar = göz. Bükümler küçük halkalarla gösterilir.
+  const W = g * Math.SQRT2; // gözün yatay köşegeni
+  if (tip === "kafes") {
+    for (let j = -1; j < 200 / (W / 2) + 1; j++) {
+      const n: string[] = [];
+      for (let k = -1; k < 130 / (W / 2) + 2; k++) n.push(`${j * (W / 2) + ((k + j) & 1) * (W / 2)},${k * (W / 2)}`);
+      desen += `<polyline points="${n.join(" ")}" fill="none" stroke="${renk}" stroke-width="1.8" stroke-linejoin="round"/>`;
+    }
+    // bükümler (iki telin birbirine geçtiği köşeler)
+    for (let j = 0; j < 200 / (W / 2) + 1; j++)
+      for (let k = 0; k < 130 / (W / 2) + 1; k++)
+        if (((k + j) & 1) === 0) desen += `<circle cx="${j * (W / 2)}" cy="${k * (W / 2)}" r="1.8" fill="none" stroke="${renk}" stroke-width="1"/>`;
+    // üst ve alt kenar: teller çift büküm (bükülmüş uç)
+    desen += `<line x1="0" y1="1" x2="200" y2="1" stroke="${renk}" stroke-width="1" stroke-dasharray="2 3"/>`;
+  }
   else if (tip === "panel") {
-    for (let i = 0; i <= 8; i++) desen += `<line x1="${10 + i * g * 0.75}" y1="0" x2="${10 + i * g * 0.75}" y2="130" stroke="${renk}" stroke-width="2.4"/>`;
-    for (const y of [20, 70, 120]) desen += `<line x1="0" y1="${y}" x2="200" y2="${y}" stroke="${renk}" stroke-width="2.4"/>`;
-    desen += `<path d="M0 64 Q100 80 200 64" stroke="${renk}" stroke-width="2" fill="none"/>`;
+    // Kaynaklı panel (önden): dikey teller göz aralığında, yatay teller 200 mm'de bir;
+    // bombe (V kıvrım) bantlarında dikey teller kırılır, bant kenarında çift yatay tel
+    const pg = 12; // 50 mm = 12 px
+    const yatay = pg * 4; // 200 mm
+    const bombe = t.tel.yukseklik < 0.9 ? 1 : t.tel.yukseklik < 1.4 ? 2 : t.tel.yukseklik < 1.9 ? 3 : 4;
+    const bantY = Array.from({ length: bombe }, (_, i) => Math.round(((i + 1) * 130) / (bombe + 1)));
+    for (let x = 6; x < 200; x += pg) {
+      let d = `M${x} 0`;
+      for (const y of bantY) d += `L${x} ${y - 6}L${x + 3.5} ${y}L${x} ${y + 6}`;
+      desen += `<path d="${d}L${x} 130" fill="none" stroke="${renk}" stroke-width="1.6" stroke-linejoin="round"/>`;
+    }
+    const yler = new Set<number>([4, 126]);
+    for (let y = 4 + yatay; y < 126; y += yatay) if (!bantY.some((b) => Math.abs(b - y) < 10)) yler.add(y);
+    for (const y of bantY) yler.add(y - 6).add(y + 6);
+    for (const y of yler) desen += `<line x1="0" y1="${y}" x2="200" y2="${y}" stroke="${renk}" stroke-width="2"/>`;
+    for (const y of bantY) desen += `<text x="197" y="${y + 2.5}" font-size="6.5" fill="${GRI}" text-anchor="end" style="paint-order:stroke" stroke="#fff" stroke-width="2">bombe</text>`;
   } else if (tip === "tavuk") {
     for (let r = 0; r < 6; r++)
       for (let c = 0; c < 9; c++) {
@@ -161,7 +188,21 @@ export function telCizimi(t: Tasarim) {
   <clipPath id="tk"><rect x="0" y="0" width="200" height="130"/></clipPath>
   <g clip-path="url(#tk)">${desen}</g>
   <rect x="0" y="0" width="200" height="130" fill="none" stroke="#dbe3ee"/>
-  ${tip === "dikenli" ? olcuOku(184, 15, 184, 40, `${t.tel.goz} mm`, -16, 2) : olcuOku(65, 140, 65 + g, 140, `${t.tel.goz} mm göz`, 0, 12)}
+  ${
+    tip === "dikenli"
+      ? olcuOku(184, 15, 184, 40, `${t.tel.goz} mm`, -16, 2)
+      : tip === "kafes"
+        ? // göz: paralel iki kenar arası (kenarlara dik), bir gözün içinde
+          (() => {
+            const cx = 4 * (W / 2), cy = 3 * (W / 2); // bir göz merkezi
+            return `<rect x="${cx - W / 2 - 2}" y="${cy - W / 2 - 2}" width="${W + 4}" height="${W + 4}" fill="#fff" fill-opacity=".55"/>` +
+              olcuOku(cx - W / 4, cy - W / 4, cx + W / 4, cy + W / 4, "", 0, 0) +
+              `<text x="${cx + W / 2 + 6}" y="${cy + 3}" font-size="7.5" fill="${KIR}" font-weight="700">${t.tel.goz} mm göz</text>`;
+          })()
+        : tip === "panel"
+          ? olcuOku(6 + 12 * 5, 140, 6 + 12 * 6, 140, `${t.tel.goz} × 200 mm göz`, 0, 12)
+          : olcuOku(65, 140, 65 + g, 140, `${t.tel.goz} mm göz`, 0, 12)
+  }
   <text x="200" y="152" font-size="7" fill="${GRI}" text-anchor="end">tel Ø${sayi(t.tel.kalinlik)} mm</text>
   <text x="100" y="166" font-size="7.5" fill="${LAC}" font-weight="700" text-anchor="middle">${esc(telTipi(tip).ad)} · ${sayi(t.tel.yukseklik, 2)} m · ${t.tel.kaplama === "pvc" ? "PVC yeşil" : "galvaniz"}</text>
 </svg>`;
@@ -217,7 +258,9 @@ export function pdfKabuk({
   /** Teklif geçerlilik satırı (teknik resimde yok) */
   altBilgi?: boolean;
 }) {
-  const { firma, gecerlilikGun } = ayarlar;
+  const { firma } = ayarlar;
+  // Geçerlilik süresi fiyat değildir: kayıtlı teklifin dondurulmuş fiyatlarından değil, güncel ayardan okunur
+  const gecerlilikGun = useAyarlar.getState().ayarlar.gecerlilikGun ?? ayarlar.gecerlilikGun;
   const m = t.musteri;
   const gecerli = new Date(tarih.getTime() + gecerlilikGun * 86400000).toLocaleDateString("tr-TR");
   const musteriSatiri = [
@@ -241,8 +284,13 @@ export function pdfKabuk({
   /* Tek A4 sayfa */
   .sayfa{width:${A4.w}px;min-height:${A4.h}px;margin:0 auto;padding:${A4.bosluk}px ${A4.bosluk + 4}px;position:relative;overflow:hidden;background:#fff}
   @media print{.sayfa{width:210mm;height:297mm;min-height:0}}
-  /* Filigran: sayfanın ortasında tek, çok şeffaf logo */
-  .filigran{position:absolute;left:50%;top:50%;width:600px;margin-left:-300px;margin-top:-52px;opacity:.05;transform:rotate(-28deg);z-index:0;pointer-events:none}
+  /* Filigran: sayfanın her yerinde küçük, şeffaf logolar (%85 şeffaf); görsel kutularının arkasında birer tane daha */
+  .filigran{position:absolute;inset:0;z-index:0;pointer-events:none;display:grid;grid-template-columns:repeat(4,1fr);grid-auto-rows:150px;align-items:center;justify-items:center;padding:20px 0}
+  .filigran img{width:130px;opacity:.15;transform:rotate(-28deg)}
+  .filigran img:nth-child(8n+5),.filigran img:nth-child(8n+6),.filigran img:nth-child(8n+7),.filigran img:nth-child(8n+8){margin-left:90px}
+  .kutu,.kart{position:relative}
+  .kutu::before,.kart::before{content:"";position:absolute;inset:0;background:url("${location.origin}${varlik("/logo.png")}") center/55% auto no-repeat;opacity:.15;transform:rotate(-20deg);pointer-events:none;z-index:0}
+  .kutu>*,.kart>*{position:relative;z-index:1}
   .ic{position:relative;z-index:1}
   .serit{height:6px;background:linear-gradient(90deg,#d82628 0 35%,#003a8c 35%)}
   header{display:flex;justify-content:space-between;align-items:center;margin:10px 0}
@@ -291,7 +339,7 @@ export function pdfKabuk({
   footer{margin-top:10px;font-size:8px;color:#5b6b85;border-top:1px solid #dbe3ee;padding-top:5px;display:flex;justify-content:space-between;gap:12px}
 </style></head><body>
 <div class="sayfa">
-<img class="filigran" src="${location.origin}${varlik("/logo.png")}" alt="">
+<div class="filigran">${`<img src="${location.origin}${varlik("/logo.png")}" alt="">`.repeat(32)}</div>
 <div class="ic">
 <div class="serit"></div>
 <header><img src="${location.origin}${varlik("/logo.png")}" alt="${esc(firma.ad)}"><div><h1>${B(baslik)}</h1><div class="k" style="text-align:right">${tarih.toLocaleDateString("tr-TR")} · No ${no}</div>${t.satisci ? `<div class="k" style="text-align:right">Teklifi veren: <b>${esc(t.satisci)}</b></div>` : ""}</div></header>
@@ -305,7 +353,7 @@ ${
 
 ${govde}
 <footer><span>${firmaSatiri}</span>
-<span>${altBilgi ? `Teklif ${gecerlilikGun} gün (${gecerli} tarihine kadar) geçerlidir. Ölçüler sahada kesinleştirilir; miktarlar buna göre değişebilir.` : "Üretim planı · ölçüler cm · kesim payı 3 mm · ticari boy 6 m"}</span></footer>
+<span>${altBilgi ? `<b style="color:#d82628">Teklif geçerlilik süresi: ${gecerlilikGun} gün (${gecerli} tarihine kadar).</b> Ölçüler sahada kesinleştirilir.` : "Üretim planı · ölçüler cm · kesim payı 3 mm · ticari boy 6 m"}</span></footer>
 </div></div>
 </body></html>`;
 }
@@ -356,6 +404,7 @@ export function teklifHtml({ t, s, ayarlar, detayResim, no, tarih }: PdfGirdisi 
   <div><span class="k">KDV %${sayi(kdvYuzde)}</span><b>${tl(s.kdv)}</b></div>
   <div class="son"><span class="k">Genel toplam (KDV dahil)</span><b>${tl(s.toplam)}</b></div>
 </div>
+${t.ekstra.kapilar.length ? `<p style="margin:6px 0 0;font-size:9px;color:#5b6b85">* Kapılar (${t.ekstra.kapilar.length} adet) ve kapı babaları bu fiyata dahil değildir; kapı modeline göre ayrıca fiyatlandırılır.</p>` : ""}
 
 `;
   return pdfKabuk({ ayarlar, t, no, tarih, govde });

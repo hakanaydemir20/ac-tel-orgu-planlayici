@@ -53,8 +53,8 @@ describe("direk yerleşimi", () => {
     expect(s.sayilar.ara).toBe(34);
     expect(s.sayilar.toplamDirek).toBe(43);
     expect(s.sayilar.payanda).toBe(8 + 2);
-    const baba = s.kalemler.find((k) => k.ad.startsWith("Araç kapısı babası 80x80"))!;
-    expect(baba.miktar).toBe(2);
+    // Kapı ve babaları çit fiyatına girmez; kapı planlayıcısında fiyatlandırılır
+    expect(s.kalemler.some((k) => k.grup === "Kapı")).toBe(false);
   });
 
   it("uzun kenarda 25 m'de bir gergi direği", () => {

@@ -227,7 +227,7 @@ const KAFES_TEMEL = { "1": 95, "1.2": 115, "1.5": 145, "1.75": 165, "2": 190 };
 
 export const VARSAYILAN_AYARLAR: Ayarlar = {
   firma: { ad: "AC Tel Örgü", telefon: "", adres: "", eposta: "", web: "" },
-  gecerlilikGun: 15,
+  gecerlilikGun: 10,
   satiscilar: ["Kaan", "Cengiz", "Ahmet", "Atilla"],
   telMetre: {
     kafes: KAFES_TEMEL, // eski kayıtlar için; kafes artık kafesMetre tablosundan fiyatlanır

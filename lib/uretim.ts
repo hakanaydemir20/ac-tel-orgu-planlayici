@@ -1,8 +1,8 @@
 // Üretim planı: kesim listesi (profil, parça boyu, adet), 6 m'lik boylardan kesim
 // optimizasyonu ve alınacak hırdavat/sarf malzeme. Çit ve kapı planlayıcıları ortak kullanır.
 import { type AracKapi, type KapiAilesi, kanatBoyu, rayBoyu, surgulu } from "./aracKapi";
-import { cerceveProfili, kanatliKolonBoyu, kapiKanatlari, surguluBabaYuksekligi } from "./kapiYapi";
-import { type Sonuc, babaBoyu, direkBoyu, flansliZemin, ikiKasliKose, kasUzunlugu } from "./hesap";
+import { GOMME_BOY, babaAdi, babaKesit, cerceveProfili, gommeBoyu, kanatliKolonBoyu, kapiKanatlari, surguluBabaYuksekligi } from "./kapiYapi";
+import { KAS_DELIKLERI, KAS_DELIK_CAP, type Sonuc, babaBoyu, direkBoyu, flansliZemin, ikiKasliKose, kasUzunlugu } from "./hesap";
 import { type Ayarlar, direkTipi, ustOlcu } from "./katalog";
 import type { Tasarim } from "./tasarim";
 
@@ -130,7 +130,7 @@ export function citUretimi(t: Tasarim, s: Sonuc, ay: Ayarlar): UretimPlani {
     kesim.push({ profil: profilAdi(dt.id, guclu), ad: "Köşe / gergi direği", boyCm: cm(govde), adet: nGuclu, kesim: direkKesim });
     if (ayriKol) {
       const kolSayi = t.direk.kasTipi === "v" ? 2 : 1;
-      const kk = `alt ${A.kasAlt} · üst ${A.kasUst}`;
+      const kk = `alt ${A.kasAlt} · üst ${A.kasUst} · ${KAS_DELIKLERI.length} × Ø${Math.round(KAS_DELIK_CAP * 1000)} delik`;
       kesim.push({ profil: profilAdi(dt.id, ara), ad: `Kaş kolu (ara, ${A.kasAci}°)`, boyCm: cm(kas), adet: s.sayilar.ara * kolSayi, kesim: kk });
       kesim.push({ profil: profilAdi(dt.id, guclu), ad: `Kaş kolu (köşe / gergi, ${A.kasAci}°)`, boyCm: cm(kas), adet: nGuclu * kolSayi + (ikiKasliKose(t) ? s.sayilar.kose : 0), kesim: kk });
     }
@@ -142,7 +142,18 @@ export function citUretimi(t: Tasarim, s: Sonuc, ay: Ayarlar): UretimPlani {
         adet: s.sayilar.payanda,
         kesim: `üst ${A.payandaUst} · alt ${A.payandaAlt}`,
       });
-    sarf.push({ ad: `Tepe kapağı ${ara}`, adet: s.sayilar.ara, birim: "adet" }, { ad: `Tepe kapağı ${guclu}`, adet: nGuclu, birim: "adet" });
+    if (ayriKol) {
+      // Kaşlı direkte kapak direk tepesinde değil, her kaş kolunun ucunda
+      const kolSayi = t.direk.kasTipi === "v" ? 2 : 1;
+      sarf.push(
+        { ad: `Kaş ucu kapağı ${ara}`, adet: s.sayilar.ara * kolSayi, birim: "adet" },
+        { ad: `Kaş ucu kapağı ${guclu}`, adet: nGuclu * kolSayi + (ikiKasliKose(t) ? s.sayilar.kose : 0), birim: "adet" },
+      );
+      notlar.push(
+        `Kaş kolu direkle aynı profilden kesilir, direğe ${A.kasAlt} ile kaynaklanır. Kolda gergi / dikenli tel için ${KAS_DELIKLERI.length} delik (Ø${Math.round(KAS_DELIK_CAP * 1000)} mm): kol boyunun ${KAS_DELIKLERI.map((f) => `${cm(kas * f)} cm`).join(", ")} noktasında, çit doğrultusunda.`,
+      );
+    } else sarf.push({ ad: `Tepe kapağı ${ara}`, adet: s.sayilar.ara, birim: "adet" }, { ad: `Tepe kapağı ${guclu}`, adet: nGuclu, birim: "adet" });
+    if (s.sayilar.payanda) notlar.push(`Payanda ara direkle aynı profilden (${profilAdi(dt.id, ara)}); üst ucu direk yüzüne, alt ucu zemine açılı kesimle oturur.`);
   } else {
     sarf.push(
       { ad: `Beton direk ${ara} · ${direkBoyu(t).toLocaleString("tr-TR")} m (hazır)`, adet: s.sayilar.ara, birim: "adet" },
@@ -180,7 +191,7 @@ export function kapiUretimi(k: AracKapi, aile: KapiAilesi): UretimPlani {
   const yaya = aile === "yaya";
   const C = cerceveProfili(aile);
   const cerceve = `${Math.round(C * 1000)}x${Math.round(C * 1000)} kutu profil`;
-  const kolon = yaya ? "70x70 kutu profil" : surgulu(k) ? "80x80 kutu profil" : "120x120 kutu profil";
+  const kolon = babaAdi(k, aile);
   const H = k.yukseklik;
   const kesim: KesimParca[] = [];
   const sarf: Sarf[] = [];
@@ -215,22 +226,23 @@ export function kapiUretimi(k: AracKapi, aile: KapiAilesi): UretimPlani {
   else if (k.dolgu === "kafes") sarf.push({ ad: `Kafes tel (çerçeve içi)`, adet: Math.ceil(n * y.w * y.ic * 10) / 10, birim: "m²" });
   else sarf.push({ ad: `Sac 1,5 mm ${cm(y.bw - C)} × ${cm((y.ic - 0.7 * C) / 2)} cm`, adet: n * y.bolum * 2, birim: "adet" });
   // Kolonlar
-  const gom = yaya ? (k.montajTipi === "flans" ? 0 : 0.6) : 0;
+  // Gömme modelde baba 50 cm toprak altında kalacak kadar uzun kesilir
+  const gom = gommeBoyu(k);
   if (surgulu(k)) {
     // Baba yüksekliği = kanat üstü (mızrak varsa ucu) + 5 cm boşluk + üst kuşak profili
-    const P = 0.08;
-    const babaH = surguluBabaYuksekligi(k);
-    olcuNotlari.push(`Kapı babası yüksekliği ${cm(babaH)} cm (kanat üstü${k.mizrak ? " / mızrak ucu" : ""} + 5 cm boşluk + 8 cm üst kuşak).`);
+    const P = babaKesit(k, aile);
+    const babaH = surguluBabaYuksekligi(k, P);
+    olcuNotlari.push(`Kapı babası yüksekliği ${cm(babaH)} cm zemin üstü (kanat üstü${k.mizrak ? " / mızrak ucu" : ""} + 5 cm boşluk + ${cm(P)} cm üst kuşak)${gom ? `; dikmeler +${cm(gom)} cm toprak altı` : ""}.`);
     const zKusak = 2 * (0.07 + P / 2) + P;
-    kesim.push({ profil: kolon, ad: "Kapı babası dikmesi (motor tarafı, 4'lü)", boyCm: cm(babaH - P), adet: 4 });
-    kesim.push({ profil: kolon, ad: "Baba üst kuşağı (kanat üstünden)", boyCm: cm(zKusak), adet: 2 });
+    kesim.push({ profil: kolon, ad: "Kapı babası dikmesi (motor tarafı, 4'lü)", boyCm: cm(babaH + gom), adet: 4, kesim: "üst 45° gönye · alt düz" });
+    kesim.push({ profil: kolon, ad: "Baba üst kuşağı (kanat üstünden)", boyCm: cm(zKusak), adet: 2, kesim: "45° gönye (iki uç)" });
     kesim.push({ profil: kolon, ad: "Baba üst kuşağı (yan)", boyCm: cm(0.4 + P), adet: 2 });
-    kesim.push({ profil: kolon, ad: "Karşılama babası dikmesi", boyCm: cm(babaH - P), adet: 2 });
-    kesim.push({ profil: kolon, ad: "Karşılama üst kuşağı", boyCm: cm(zKusak), adet: 1 });
+    kesim.push({ profil: kolon, ad: "Karşılama babası dikmesi", boyCm: cm(babaH + gom), adet: 2, kesim: "üst 45° gönye · alt düz" });
+    kesim.push({ profil: kolon, ad: "Karşılama üst kuşağı", boyCm: cm(zKusak), adet: 1, kesim: "45° gönye (iki uç)" });
     if (k.tip === "konsol") kesim.push({ profil: "40x40 kutu profil", ad: "Kuyruk eğik çubuğu", boyCm: cm(Math.hypot(kanatBoyu(k) - k.genislik, H)), adet: 1 });
   } else {
     kesim.push({ profil: kolon, ad: "Kolon (baba)", boyCm: cm(kanatliKolonBoyu(k, aile) + gom), adet: 2 });
-    olcuNotlari.push(`Kolon boyu ${cm(kanatliKolonBoyu(k, aile) + gom)} cm${gom ? ` (${cm(gom)} cm betona gömülü)` : ""}.`);
+    olcuNotlari.push(`Kolon boyu ${cm(kanatliKolonBoyu(k, aile) + gom)} cm${gom ? ` (${cm(gom)} cm toprak altı)` : ""}.`);
   }
   if (k.mizrak) kesim.push({ profil: "12x12 kare demir", ad: "Mızrak çubuğu", boyCm: 20, adet: Math.round(kanatBoyu(k) / 0.2) });
   // Hırdavat
@@ -251,10 +263,11 @@ export function kapiUretimi(k: AracKapi, aile: KapiAilesi): UretimPlani {
   if (k.motor) sarf.push({ ad: surgulu(k) ? "Sürgü motoru + 2 kumanda" : "Kanat kol motoru", adet: surgulu(k) ? 1 : n, birim: "adet" });
   if (k.fotosel) sarf.push({ ad: "Fotosel (çift)", adet: 1, birim: "takım" });
   if (k.flasor) sarf.push({ ad: "Flaşör", adet: 1, birim: "adet" });
-  // 4'lü baba üstten kuşakla kapanır, kapak yalnız karşılama ve kanatlı kolonlarda
-  const kolonAdet = 2;
+  // Sürgülüde 4'lü ve karşılama babası üstten 45° gönye kuşakla kapanır, kapak yalnız kanatlı kolonlarda
+  const kolonAdet = surgulu(k) ? 0 : 2;
   sarf.push({ ad: "Tepe kapağı", adet: kolonAdet, birim: "adet" });
-  if (yaya && k.montajTipi === "flans") sarf.push({ ad: "Flanş (ayak plakası) + 4 dübel", adet: 2, birim: "takım" });
-  if (!yaya || k.montajTipi !== "flans") notlar.push(yaya ? "Kolonlar 60 cm betona gömülür." : "Kolonlar zemine flanşla ya da betona gömülerek sabitlenir.");
+  const dikmeAdet = surgulu(k) ? 6 : 2;
+  if (k.montajTipi === "flans") sarf.push({ ad: "Flanş (ayak plakası) + 4 dübel", adet: dikmeAdet, birim: "takım" });
+  else notlar.push(`Babalar ${cm(GOMME_BOY)} cm toprak altında kalacak şekilde betona gömülür.`);
   return { baslik: yaya ? "Yaya kapısı" : "Araç kapısı", kesim: kesim.filter((x) => x.adet > 0), alim: alimHesapla(kesim.filter((x) => x.adet > 0)), sarf: sarf.filter((x) => x.adet > 0), notlar, olcuNotlari };
 }

@@ -1,7 +1,7 @@
 // Kapı teknik resimleri (SVG): ölçülü ön görünüş, üstten görünüş, 45° gönye köşe detayı.
 // Ölçüler 3D ile aynı hesaptan (lib/kapiYapi) gelir.
 import { type AracKapi, type KapiAilesi, kanatBoyu, rayBoyu, surgulu } from "@/lib/aracKapi";
-import { type KapiKanadi, MIZRAK_BOY, kanatliKolonBoyu, kapiKanatlari, surguluBabaYuksekligi } from "@/lib/kapiYapi";
+import { type KapiKanadi, KILIT_KUTUSU, kolYuksekligi, menteseYukseklikleri, MIZRAK_BOY, babaAdi, babaKesit, babaTipi, cerceveProfili, gommeBoyu, kanatliKolonBoyu, kapiKanatlari, surguluBabaYuksekligi } from "@/lib/kapiYapi";
 
 const KIR = "#d82628";
 const LAC = "#003a8c";
@@ -58,17 +58,36 @@ export function kapiOnGorunus(k: AracKapi, aile: KapiAilesi) {
   const kanatlar = kapiKanatlari(k, aile);
   const kn = kanatlar[0];
   const L = k.tip === "konsol" ? kanatBoyu(k) : k.genislik;
-  const kolonH = surgulu(k) ? surguluBabaYuksekligi(k) : kanatliKolonBoyu(k, aile);
+  const Pm = babaKesit(k, aile);
+  const kolonH = surgulu(k) ? surguluBabaYuksekligi(k, Pm) : kanatliKolonBoyu(k, aile);
+  const gom = gommeBoyu(k);
   const W = 680;
-  const s = Math.min((W - 160) / (L + 0.6), 300 / (kolonH + 0.3));
+  const s = Math.min((W - 200) / (L + 0.6), 300 / (kolonH + gom + 0.3));
   const yz = 40 + kolonH * s + 10;
-  const x0 = 90;
-  let g = `<line x1="20" y1="${yz}" x2="${W - 10}" y2="${yz}" stroke="${GRI}" stroke-width="1"/>`;
-  const P = (aile === "yaya" ? 0.07 : surgulu(k) ? 0.08 : 0.12) * s;
+  const x0 = 110;
+  // zemin çizgisi ve toprak taraması
+  let g = `<defs><pattern id="tp" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><path d="M0 0v8" stroke="${GRI}" stroke-width=".6"/></pattern></defs>`;
+  g += `<rect x="20" y="${yz}" width="${W - 30}" height="${Math.max(8, gom * s + 10)}" fill="url(#tp)" opacity=".35"/>`;
+  g += `<line x1="20" y1="${yz}" x2="${W - 10}" y2="${yz}" stroke="#1f2937" stroke-width="1.4"/>`;
+  g += `<text x="24" y="${yz - 4}" font-size="8" fill="${GRI}">±0,00 zemin</text>`;
+  const P = Pm * s;
+  const boru = babaTipi(k) === "boru";
   // kanatların sol kenarı (kapı açıklığı x0 + kuyruk)
   const acikSol = x0 + (k.tip === "konsol" ? (L - k.genislik) * s : 0);
   // kolonlar
-  const kolon = (x: number) => `<rect x="${x - P / 2}" y="${yz - kolonH * s}" width="${P}" height="${kolonH * s}" fill="#dfe6ef" stroke="${LAC}" stroke-width="1.2"/>`;
+  const kolonXler: number[] = [];
+  const kolon = (x: number) => {
+    kolonXler.push(x);
+    let r = `<rect x="${x - P / 2}" y="${yz - kolonH * s}" width="${P}" height="${kolonH * s}" fill="#dfe6ef" stroke="${LAC}" stroke-width="1.2"/>`;
+    // boruda eksen çizgisi
+    if (boru) r += `<line x1="${x}" y1="${yz - kolonH * s - 6}" x2="${x}" y2="${yz + gom * s + 6}" stroke="${GRI}" stroke-width=".4" stroke-dasharray="8 2 2 2"/>`;
+    if (gom) {
+      // toprak altındaki boy (kesik) ve beton temel
+      r += `<rect x="${x - P / 2 - 0.1 * s}" y="${yz}" width="${P + 0.2 * s}" height="${(gom + 0.05) * s}" fill="#e5e7eb" stroke="${GRI}" stroke-width=".6"/>`;
+      r += `<rect x="${x - P / 2}" y="${yz}" width="${P}" height="${gom * s}" fill="none" stroke="${LAC}" stroke-width=".9" stroke-dasharray="4 2"/>`;
+    } else r += `<rect x="${x - P}" y="${yz - 0.012 * s}" width="${P * 2}" height="${0.012 * s}" fill="${LAC}"/>`;
+    return r;
+  };
   g += kolon(acikSol - P / 2) + kolon(acikSol + k.genislik * s + P / 2);
   if (surgulu(k)) g += kolon(acikSol - P * 2.5) + `<rect x="${acikSol - P * 3}" y="${yz - kolonH * s}" width="${P * 3}" height="${0.08 * s}" fill="#dfe6ef" stroke="${LAC}"/>`;
   // kanatlar
@@ -85,6 +104,44 @@ export function kapiOnGorunus(k: AracKapi, aile: KapiAilesi) {
     const ky = yz - (kn.yerden + kn.h) * s;
     for (let x = acikSol + 0.1 * s; x < acikSol + kn.w * s; x += 0.2 * s) g += `<line x1="${x}" y1="${ky}" x2="${x}" y2="${ky - MIZRAK_BOY * s}" stroke="${LAC}" stroke-width=".8"/>`;
   }
+  // Menteşeler ve kapı kolu (kanatlı kapılar)
+  const detayIsareti = (x: number, y: number, r: number, harf: string) =>
+    `<circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="${KIR}" stroke-width=".8" stroke-dasharray="3 2"/><text x="${x + r * 0.75}" y="${y - r * 0.75}" font-size="10" font-weight="800" fill="${KIR}">${harf}</text>`;
+  let menteseOlcu = "";
+  if (!surgulu(k)) {
+    const my = menteseYukseklikleri(k, aile);
+    const sol0 = k.tip === "cift" ? acikSol + 0.04 * s : acikSol + ((k.genislik - kn.w) / 2) * s;
+    const menteseX = k.tip === "cift" ? [sol0, acikSol + k.genislik * s - 0.04 * s] : [sol0];
+    for (const mx of menteseX)
+      for (const y of my) {
+        const py = yz - (kn.yerden + y) * s;
+        g += `<rect x="${mx - 0.025 * s}" y="${py - 0.045 * s}" width="${0.05 * s}" height="${0.09 * s}" rx="1.5" fill="#1f2937" stroke="#111" stroke-width=".5"/>`;
+      }
+    // menteşe yükseklik ölçüleri (zeminden), solda
+    const mxSol = menteseX[0] - P - 8;
+    for (const y of my) {
+      const py = yz - (kn.yerden + y) * s;
+      menteseOlcu += `<line x1="${mxSol - 30}" y1="${py}" x2="${menteseX[0]}" y2="${py}" stroke="${GRI}" stroke-width=".4" stroke-dasharray="2 2"/>`;
+    }
+    // zincir ölçü: zemin → 1. menteşe → 2. menteşe …
+    const zy = [0, ...my.map((y) => kn.yerden + y)];
+    for (let i = 1; i < zy.length; i++) menteseOlcu += dikeyOlcu(mxSol - 34, yz - zy[i] * s, yz - zy[i - 1] * s, cm(zy[i] - zy[i - 1]), mxSol - 30, 7.5);
+    g += detayIsareti(menteseX[0], yz - (kn.yerden + my.at(-1)!) * s, 0.13 * s, "M");
+    if (k.kilit || k.elektrikliKilit) {
+      const ky = yz - (kn.yerden + kolYuksekligi(k)) * s;
+      const kx = sol0 + kn.w * s - 0.06 * s;
+      const kw = (KILIT_KUTUSU.en / 1000) * s;
+      const kh = (KILIT_KUTUSU.boy / 1000) * s;
+      g += `<rect x="${kx - kw / 2}" y="${ky - kh * 0.3}" width="${kw}" height="${kh}" rx="1" fill="#374151" stroke="#111" stroke-width=".5"/>`;
+      g += `<line x1="${kx}" y1="${ky}" x2="${kx - 0.12 * s}" y2="${ky}" stroke="#9ca3af" stroke-width="${Math.max(2, 0.018 * s)}" stroke-linecap="round"/>`;
+      g += `<circle cx="${kx}" cy="${ky + kh * 0.35}" r="${Math.max(1.5, 0.01 * s)}" fill="#d4af37"/>`;
+      g += detayIsareti(kx, ky + kh * 0.2, 0.16 * s, "K");
+      g += dikeyOlcu(kx + 0.3 * s, ky, yz, cm(kn.yerden + kolYuksekligi(k)), kx + 4, 8);
+      g += `<text x="${kx + 0.3 * s + 4}" y="${ky + 3}" font-size="7.5" fill="${KIR}" font-weight="700">kol</text>`;
+    }
+  }
+  g += menteseOlcu;
+
   // ölçüler
   const ust = yz - kolonH * s;
   g += yatayOlcu(acikSol, acikSol + k.genislik * s, yz + 22, `geçiş ${cm(k.genislik)} cm`, yz, yz);
@@ -99,9 +156,27 @@ export function kapiOnGorunus(k: AracKapi, aile: KapiAilesi) {
   g += dikeyOlcu(sag + 34, kanatUst, yz - kn.yerden * s, cm(kn.h), sag, 9);
   g += dikeyOlcu(sag + 34, yz - kn.yerden * s, yz, cm(kn.yerden), sag, 8);
   g += dikeyOlcu(sag + 74, ust, yz, `baba ${cm(kolonH)}`, sag, 9);
+  if (gom) {
+    g += dikeyOlcu(sag + 74, yz, yz + gom * s, `toprak altı ${cm(gom)}`, sag, 8);
+    g += `<text x="${sag + 80}" y="${yz + gom * s + 12}" font-size="8" fill="${KIR}" font-weight="700" text-anchor="end">kesim boyu ${cm(kolonH + gom)}</text>`;
+  }
+  // baba dıştan dışa genişlik
+  if (kolonXler.length >= 2) {
+    const a = Math.min(...kolonXler) - P / 2;
+    const b = Math.max(...kolonXler) + P / 2;
+    g += yatayOlcu(a, b, yz + gom * s + 34, `babalar dıştan dışa ${cm((b - a) / s)}`, yz + gom * s, yz + gom * s, 8);
+  }
+  // parça etiketleri (çıkış çizgili)
+  const etiket = (x: number, y: number, tx: number, ty: number, yazi: string) =>
+    `<circle cx="${x}" cy="${y}" r="1.6" fill="${LAC}"/><polyline points="${x},${y} ${tx},${ty} ${tx + (tx < x ? -4 : 4)},${ty}" fill="none" stroke="${LAC}" stroke-width=".6"/>` +
+    `<text x="${tx + (tx < x ? -6 : 6)}" y="${ty + 3}" font-size="8.5" fill="${LAC}" font-weight="700" text-anchor="${tx < x ? "end" : "start"}">${yazi}</text>`;
+  const solBaba = Math.min(...kolonXler);
+  g += etiket(solBaba, yz - kolonH * s * 0.97, solBaba - 8, yz - kolonH * s - 14, `Baba: ${babaAdi(k, aile)}`.replace(/^(.{0,40}).*$/, "$1"));
+  const C = cerceveProfili(aile);
+  g += etiket(kx0 + kn.w * s * 0.3, kanatUst + C * s * 0.5, kx0 + kn.w * s * 0.3 + 24, ust - 26, `Çerçeve ${Math.round(C * 1000)}x${Math.round(C * 1000)} profil, köşeler 45°`);
   if (kn.ortaKusak) g += `<text x="${kx0 + 4}" y="${yz - (kn.yerden + kn.araKusakY) * s - 4}" font-size="8" fill="${GRI}">orta kuşak ${cm(kn.araKusakY)}</text>`;
   if (kn.dolguAdet) g += `<text x="${kx0 + kn.C * s + 3}" y="${kanatUst + kn.C * s + 11}" font-size="8" fill="${GRI}">dolgu eksen aralığı ${cm(kn.dolguAralik)}</text>`;
-  return `<svg viewBox="0 0 ${W} ${yz + 40}" xmlns="http://www.w3.org/2000/svg">${OK}${g}</svg>`;
+  return `<svg viewBox="0 0 ${W} ${yz + gom * s + 50}" xmlns="http://www.w3.org/2000/svg">${OK}${g}</svg>`;
 }
 
 /** Üstten görünüş: çit hattı, kolonlar, kanat; kanatlıda açılma yayı, sürgülüde ray ve park yeri. */
@@ -149,4 +224,63 @@ export function goenyeDetayi(aile: KapiAilesi) {
 <text x="100" y="118" font-size="8" fill="${GRI}">köşeden dört yanı kaynatılır.</text>
 <text x="100" y="130" font-size="8" fill="${GRI}">Kesim boyu = dış ölçü.</text>
 </svg>`;
+}
+
+
+/** Detay M: menteşe (yaya: ayarlı cıvatalı menteşe, araç: bayraklı kaynaklı menteşe). Ölçüler mm. */
+export function menteseDetayi(aile: KapiAilesi) {
+  const yaya = aile === "yaya";
+  let g = `<text x="10" y="16" font-size="11" font-weight="800" fill="${KIR}">DETAY M</text><text x="78" y="16" font-size="8.5" fill="${GRI}">${yaya ? "ayarlı cıvatalı menteşe" : "bayraklı kaynaklı menteşe"} · ölçek 1:2</text>`;
+  // Ön görünüş: kolon | menteşe | kanat çerçevesi
+  g += `<rect x="20" y="30" width="34" height="120" fill="#dfe6ef" stroke="${LAC}" stroke-width="1.1"/><text x="37" y="162" font-size="7.5" fill="${GRI}" text-anchor="middle">baba</text>`;
+  g += `<rect x="96" y="30" width="22" height="120" fill="#e8eef6" stroke="${LAC}" stroke-width="1.1"/><text x="107" y="162" font-size="7.5" fill="${GRI}" text-anchor="middle">kanat</text>`;
+  if (yaya) {
+    // kolona cıvatalı kelepçe + M12 ayar civatası + kanada kaynaklı kulak
+    g += `<rect x="16" y="70" width="42" height="40" rx="3" fill="#374151" stroke="#111" stroke-width=".6"/>`;
+    g += `<rect x="58" y="84" width="34" height="12" fill="#9ca3af" stroke="#111" stroke-width=".6"/>`;
+    for (let x = 60; x < 90; x += 4) g += `<line x1="${x}" y1="84" x2="${x + 2}" y2="96" stroke="#111" stroke-width=".4"/>`;
+    g += `<rect x="88" y="78" width="10" height="24" fill="#374151" stroke="#111" stroke-width=".6"/>`;
+    g += yatayOlcu(58, 92, 128, "M12 ayar 30–50", 96, 96, 7.5);
+    g += dikeyOlcu(12, 70, 110, "40", 16, 7.5);
+    g += `<text x="128" y="70" font-size="8" fill="${LAC}">• Kelepçe babaya cıvatayla sıkılır</text><text x="128" y="82" font-size="8" fill="${LAC}">• M12 civata ile ±10 mm ayar</text><text x="128" y="94" font-size="8" fill="${LAC}">• Kulak kanada kaynaklı</text><text x="128" y="106" font-size="8" fill="${LAC}">• Galvaniz, kanat başına 2 adet</text>`;
+  } else {
+    // bayrak (kolona kaynaklı alt yarım) + pim gövdesi Ø48 + kanada kaynaklı üst yarım
+    g += `<rect x="54" y="92" width="22" height="16" fill="#9ca3af" stroke="#111" stroke-width=".6"/>`;
+    g += `<rect x="72" y="54" width="18" height="38" rx="3" fill="#374151" stroke="#111" stroke-width=".6"/><rect x="72" y="94" width="18" height="38" rx="3" fill="#374151" stroke="#111" stroke-width=".6"/>`;
+    g += `<rect x="70" y="91" width="22" height="4" fill="#d4af37"/>`;
+    g += `<rect x="86" y="62" width="10" height="16" fill="#9ca3af" stroke="#111" stroke-width=".6"/>`;
+    g += dikeyOlcu(66, 54, 132, "160", 72, 7.5);
+    g += yatayOlcu(72, 90, 146, "Ø48", 132, 132, 7.5);
+    g += `<text x="128" y="70" font-size="8" fill="${LAC}">• Alt yarım babaya, üst yarım kanada kaynak</text><text x="128" y="82" font-size="8" fill="${LAC}">• Pirinç pul, gresörlük</text><text x="128" y="94" font-size="8" fill="${LAC}">• Kanat ağırlığına göre 2–3 adet</text><text x="128" y="106" font-size="8" fill="${LAC}">• Kaynak: 4 yandan, a=4</text>`;
+  }
+  return `<svg viewBox="0 0 300 172" xmlns="http://www.w3.org/2000/svg">${OK}${g}</svg>`;
+}
+
+/** Detay K: kilit kutusu, silindir ve kapı kolu. Ölçüler mm. */
+export function kolDetayi(k: AracKapi) {
+  const { en, boy } = KILIT_KUTUSU;
+  const sk = 0.55; // px / mm
+  const x0 = 40, y0 = 30;
+  let g = `<text x="10" y="16" font-size="11" font-weight="800" fill="${KIR}">DETAY K</text><text x="78" y="16" font-size="8.5" fill="${GRI}">kilit kutusu ve kol · ölçek 1:4</text>`;
+  g += `<rect x="${x0 + en * sk + 4}" y="${y0 - 10}" width="16" height="${boy * sk + 20}" fill="#e8eef6" stroke="${LAC}" stroke-width="1"/><text x="${x0 + en * sk + 12}" y="${y0 + boy * sk + 22}" font-size="7.5" fill="${GRI}" text-anchor="middle">kanat</text>`;
+  g += `<rect x="${x0}" y="${y0}" width="${en * sk}" height="${boy * sk}" rx="2" fill="#374151" stroke="#111" stroke-width=".7"/>`;
+  const ky = y0 + 70 * sk;
+  g += `<rect x="${x0 + en * sk / 2 - 5}" y="${ky - 22}" width="10" height="${110 * sk}" rx="2" fill="#cbd5e1" stroke="#111" stroke-width=".5"/>`;
+  g += `<line x1="${x0 + en * sk / 2}" y1="${ky}" x2="${x0 + en * sk / 2 - 120 * sk}" y2="${ky}" stroke="#9ca3af" stroke-width="6" stroke-linecap="round"/>`;
+  g += `<circle cx="${x0 + en * sk / 2}" cy="${ky + 70 * sk}" r="5" fill="#d4af37" stroke="#111" stroke-width=".5"/>`;
+  g += dikeyOlcu(x0 + en * sk + 34, y0, y0 + boy * sk, String(boy), x0 + en * sk + 20, 7.5);
+  g += yatayOlcu(x0, x0 + en * sk, y0 + boy * sk + 14, String(en), y0 + boy * sk, y0 + boy * sk, 7.5);
+  g += yatayOlcu(x0 + en * sk / 2 - 120 * sk, x0 + en * sk / 2, ky - 30, "kol 120", ky, ky, 7.5);
+  const tx = x0 + en * sk + 44;
+  g += [
+    "• 65×85 kilit kutusu kanada kaynaklı",
+    "• Silindir: 30/30 mm, 3 anahtar",
+    "• Çift taraflı paslanmaz kol",
+    "• Dil: 20 mm, karşılık babada",
+    k.elektrikliKilit ? "• Elektrikli kilit 12 V + kart okuyucu" : "",
+  ]
+    .filter(Boolean)
+    .map((t, i) => `<text x="${tx}" y="${y0 + 20 + i * 13}" font-size="8" fill="${LAC}">${t}</text>`)
+    .join("");
+  return `<svg viewBox="0 0 300 172" xmlns="http://www.w3.org/2000/svg">${OK}${g}</svg>`;
 }

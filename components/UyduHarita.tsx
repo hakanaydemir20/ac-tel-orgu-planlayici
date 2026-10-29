@@ -3,7 +3,7 @@ import "leaflet/dist/leaflet.css";
 import type * as Leaflet from "leaflet";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { EnlemBoylam, enlemBoylamdanMetre, mesafe, uydudanUygula } from "@/lib/harita";
+import { EnlemBoylam, aramaSorgulari, enlemBoylamdanMetre, mesafe, uydudanUygula } from "@/lib/harita";
 import { alan, kendiniKesiyor } from "@/lib/serbest";
 import { useTasarim } from "@/lib/store";
 import { sayi } from "./ui";
@@ -25,6 +25,7 @@ export function UyduHarita({ kapat }: { kapat: () => void }) {
   const [kapali, setKapali] = useState(false);
   const [ara, setAra] = useState("");
   const [mesaj, setMesaj] = useState("");
+  const [sonuclar, setSonuclar] = useState<{ lat: string; lon: string; display_name: string; boundingbox?: string[] }[]>([]);
   const [hazir, setHazir] = useState(false);
   const durum = useRef({ noktalar, kapali });
   durum.current = { noktalar, kapali };
@@ -109,18 +110,32 @@ export function UyduHarita({ kapat }: { kapat: () => void }) {
     });
   }, [noktalar, kapali, hazir]);
 
+  type Sonuc = { lat: string; lon: string; display_name: string; boundingbox?: string[] };
+  const git = (y: Sonuc) => {
+    const b = y.boundingbox?.map(Number);
+    if (b && b.length === 4) harita.current?.fitBounds([[b[0], b[2]], [b[1], b[3]]], { maxZoom: 18 });
+    else harita.current?.setView([+y.lat, +y.lon], 17);
+    setMesaj(y.display_name);
+    setSonuclar([]);
+  };
   const yerBul = async () => {
-    const q = ara.trim();
-    if (!q) return;
+    const sorgular = aramaSorgulari(ara);
+    if (!sorgular.length) return;
     setMesaj("Aranıyor…");
+    setSonuclar([]);
     try {
-      const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=tr&accept-language=tr&q=${encodeURIComponent(q)}`);
-      const [y] = (await r.json()) as { lat: string; lon: string; display_name: string; boundingbox?: string[] }[];
-      if (!y) return setMesaj("Bulunamadı. İl, ilçe, mahalle ya da köy adı deneyin.");
-      const b = y.boundingbox?.map(Number);
-      if (b && b.length === 4) harita.current?.fitBounds([[b[0], b[2]], [b[1], b[3]]], { maxZoom: 17 });
-      else harita.current?.setView([+y.lat, +y.lon], 16);
-      setMesaj(y.display_name);
+      // Adres sadeleşerek sırayla denenir (Mah./Sk./No: gibi ifadeler servis tarafından tanınmıyor)
+      for (let n = 0; n < sorgular.length; n++) {
+        if (n) await new Promise((r) => setTimeout(r, 1000)); // servis sınırı: saniyede 1 istek
+        const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=tr&accept-language=tr&q=${encodeURIComponent(sorgular[n])}`);
+        const liste = (await r.json()) as Sonuc[];
+        if (!liste.length) continue;
+        git(liste[0]);
+        if (n) setMesaj(`${liste[0].display_name} · tam adres bulunamadı, en yakın bölge gösteriliyor`);
+        if (liste.length > 1) setSonuclar(liste);
+        return;
+      }
+      setMesaj("Bulunamadı. Mahalle ve ilçe adını yazmayı deneyin (ör. Atatürk Mahallesi, Ataşehir).");
     } catch {
       setMesaj("Arama yapılamadı. İnternet bağlantısını kontrol edin.");
     }
@@ -203,6 +218,15 @@ export function UyduHarita({ kapat }: { kapat: () => void }) {
           <div className="pointer-events-none absolute left-1/2 top-3 z-[500] w-[min(92%,560px)] -translate-x-1/2 rounded-xl bg-ac-gece/90 px-4 py-2 text-center text-sm font-semibold shadow-lg ring-1 ring-white/10">
             👆 {ipucu}
             {mesaj && <div className="truncate text-xs font-normal text-[var(--metin-2)]">{mesaj}</div>}
+            {sonuclar.length > 1 && (
+              <div className="mt-1 flex flex-wrap gap-1">
+                {sonuclar.map((y, n) => (
+                  <button key={n} type="button" onClick={() => git(y)} className="max-w-[18rem] truncate rounded-lg bg-white/10 px-2 py-1 text-xs font-semibold hover:bg-white/20" title={y.display_name}>
+                    {y.display_name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

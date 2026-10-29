@@ -25,7 +25,7 @@ export const KAPI_DOLGULARI: { id: KapiDolgu; ad: string; aciklama: string }[] =
 
 export const KAPI_GENISLIKLERI = [3, 4, 5, 6, 8, 10, 12];
 /** Kanatlı araç kapısı en fazla 10 m; raylı ve konsol 12 m'ye kadar */
-export const azamiGenislik = (k: Pick<AracKapi, "tip">, aile: KapiAilesi = "arac") => (aile === "yaya" ? (k.tip === "cift" ? 4 : 2) : surgulu(k) ? 12 : 10);
+export const azamiGenislik = (k: Pick<AracKapi, "tip">, aile: KapiAilesi = "arac") => (aile === "yaya" ? 4 : surgulu(k) ? 12 : 10);
 export const KAPI_YUKSEKLIKLERI = [1.5, 1.8, 2, 2.5];
 
 export interface AracKapi {
@@ -43,6 +43,9 @@ export interface AracKapi {
   elektrikliKilit: boolean; // elektrikli kilit / kart okuyucu
   /** Kolon montajı: betona gömme ya da beton zemine flanşlı ayak */
   montajTipi: "gomme" | "flans";
+  /** Kapı babası malzemesi ve ölçüsü (mm: kutu profilde kenar, boruda dış çap); boşsa aileye göre varsayılan */
+  babaTip?: "profil" | "boru";
+  babaOlcu?: number;
   montaj: boolean;
 }
 
@@ -125,12 +128,14 @@ export function aracKapiHesapla(k: AracKapi, ay: Pick<Ayarlar, "kdvYuzde"> & { a
     ekle({ grup: "Hizmet", ad: k.tip === "surgulu" ? "Ray ve beton temel" : "Konsol taşıyıcı beton temel", miktar: rayBoyu(k), birim: "m", birimFiyat: f.rayMetre });
   if (k.kilit) ekle({ grup: "Motor ve aksesuar", ad: "Silindir kilit + kol", miktar: 1, birim: "takım", birimFiyat: f.kilit });
   if (k.elektrikliKilit) ekle({ grup: "Motor ve aksesuar", ad: "Elektrikli kilit + kart okuyucu", miktar: 1, birim: "takım", birimFiyat: f.elektrikliKilit });
-  if (aile === "yaya")
+  {
+    const kolon = surgulu(k) ? 6 : 2; // sürgülüde 4'lü baba + 2'li karşılama
     ekle(
       k.montajTipi === "flans"
-        ? { grup: "Hizmet", ad: "Flanşlı kolon ayağı + dübel", miktar: 2, birim: "kolon", birimFiyat: f.flansKolon }
-        : { grup: "Hizmet", ad: "Kolon betona gömme", miktar: 2, birim: "kolon", birimFiyat: f.gommeKolon },
+        ? { grup: "Hizmet", ad: "Flanşlı kolon ayağı + dübel", miktar: kolon, birim: "kolon", birimFiyat: f.flansKolon }
+        : { grup: "Hizmet", ad: "Kolon betona gömme (50 cm)", miktar: kolon, birim: "kolon", birimFiyat: f.gommeKolon },
     );
+  }
   if (k.montaj) ekle({ grup: "Hizmet", ad: "Kapı montajı", miktar: 1, birim: "adet", birimFiyat: f.montaj });
 
   const araToplam = kalemler.reduce((s, x) => s + x.tutar, 0);

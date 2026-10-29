@@ -112,6 +112,9 @@ export const ciftKose = (t: Tasarim) =>
  * Kaş kolu uzunluğu, m: düzlemsel jiletli tel takılınca kol halka çapı kadar uzar
  * (halka kola boydan boya yaslanır); diğer durumlarda sabit KAS_UZUNLUK.
  */
+/** Kaş kolundaki gergi / dikenli tel delikleri: kol boyunun bu oranlarında, 3 adet (uçta profil kapağı) */
+export const KAS_DELIKLERI = [0.3, 0.6, 0.9];
+export const KAS_DELIK_CAP = 0.012; // m
 export const kasUzunlugu = (t: Tasarim) =>
   !t.direk.kasli ? 0 : t.ekstra.ustTel === "duzlemsel" && t.tel.tip !== "dikenli" ? t.ekstra.duzlemselCap / 100 : KAS_UZUNLUK;
 
@@ -470,33 +473,8 @@ export function hesapla(t: Tasarim, ay: Ayarlar = VARSAYILAN_AYARLAR): Sonuc {
   }
 
   // --- Kapılar ---
-  for (const tur of ["yaya", "arac"] as const) {
-    const liste = kapilar.filter((k) => k.kapi.tur === tur);
-    if (!liste.length) continue;
-    ekle({
-      grup: "Kapı",
-      ad: tur === "yaya" ? "Yaya kapısı" : "Araç kapısı (çift kanat)",
-      miktar: liste.length,
-      birim: "adet",
-      birimFiyat: tur === "yaya" ? ay.kapiYaya : ay.kapiArac,
-    });
-  }
-  // Kapı babaları: kalın demir kolon; demir direk sabit maliyeti (+ flanş) + boy × metre
-  const bBoy = babaBoyu(t);
-  const bBoyali = t.direk.tip !== "beton" && t.direk.renk !== "galvaniz";
-  const bSabit = dd.kaynak + dd.kapak + dd.nakliye + dd.diger + (bBoyali ? dd.boya : 0) + (flansli ? ay.flansAdet : 0);
-  for (const tur of ["arac", "yaya"] as const) {
-    const n = babalar.filter((x) => x.tur === tur).length;
-    if (!n) continue;
-    const olcu = tur === "arac" ? ay.kapiBabasi.aracOlcu : ay.kapiBabasi.yayaOlcu;
-    ekle({
-      grup: "Kapı",
-      ad: `${tur === "arac" ? "Araç" : "Yaya"} kapısı babası ${olcu}${flansli ? " flanşlı" : ""}${bBoyali ? ` ${direkRengi(t.direk.renk).ad.toLocaleLowerCase("tr")}` : ""} · ${tr(bBoy)} m`,
-      miktar: n,
-      birim: "adet",
-      birimFiyat: (dd.eskiModel ? 0 : bSabit) + Math.max(bBoy, dd.eskiModel ? 0 : dd.asgariBoy) * (ay.kapiBabasi.metre[olcu] ?? 0),
-    });
-  }
+  // Kapı ve kapı babaları çit fiyatına dahil edilmez: kapı modele göre değiştiği için
+  // yaya / araç kapısı planlayıcısında tasarlanıp ayrı fiyatlandırılır. Çit hattı kapı yerinde kesilir.
 
   // --- Hizmetler ---
   // Beton zeminde direk gömülmediği için temel yok; sabitleme Bağlantı grubunda

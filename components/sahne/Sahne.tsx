@@ -4,8 +4,9 @@ import { Environment, GizmoHelper, GizmoViewcube, Grid, Lightformer, Line, Orbit
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTema } from "@/lib/tema";
 import * as THREE from "three";
+import { DETAY_ORAN } from "../pdf";
 import type { Direk, Kosu, Nokta, Sonuc } from "@/lib/hesap";
-import { kasUzunlugu } from "@/lib/hesap";
+import { KAS_DELIKLERI, KAS_DELIK_CAP, kasUzunlugu } from "@/lib/hesap";
 import { VARSAYILAN_AYARLAR, direkRengi, direkTipi, ustOlcu } from "@/lib/katalog";
 import { Tasarim, kenarHarfi, sekilNoktalari } from "@/lib/tasarim";
 import { disNormal, icinde } from "@/lib/geometri";
@@ -46,6 +47,71 @@ function Cubuk({ a, b, k, renk, malzeme, yuvarlak = false }: { a: THREE.Vector3;
   );
 }
 
+/**
+ * Demir direk kaş kolu (direğin yerel ekseninde): direkle aynı profilden, 45° (yarım açı) gönye
+ * birleşimli. Direk ve kol birleşimde e = k/2·tan(θ/2) uzatılır; iki kutunun birleşimi tam gönye
+ * köşesi verir. Uçta profil kapağı, kol üstünde gergi teli için 3 delik (çit doğrultusunda).
+ */
+function KasKolu({ yon, L, k, h, boru, malzeme, kapak }: { yon: THREE.Vector3; L: number; k: number; h: number; boru: boolean; malzeme: THREE.Material; kapak: THREE.Material }) {
+  const { q, e, eksen } = useMemo(() => {
+    const d = yon.clone().normalize();
+    const teta = YUKARI.angleTo(d);
+    // kol dönme ekseni yatay kalır: kutu yüzleri direğin yüzleriyle aynı hizada
+    return { q: new THREE.Quaternion().setFromUnitVectors(YUKARI, d), e: (k / 2) * Math.tan(teta / 2), eksen: d };
+  }, [yon, k]);
+  const ust = new THREE.Vector3(0, h, 0);
+  const merkez = ust.clone().addScaledVector(eksen, (L - e) / 2);
+  // delik ekseni: kol yönüne ve dönme eksenine dik → çit doğrultusu (yerel z, kol yan yatınca da)
+  const delikYon = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
+  const delikQ = new THREE.Quaternion().setFromUnitVectors(YUKARI, delikYon);
+  return (
+    <group>
+      {/* gönye için direk üst ucu e kadar uzatılır */}
+      {e > 1e-4 && (
+        <mesh material={malzeme} position={[0, h + e / 2, 0]} castShadow>
+          {boru ? <cylinderGeometry args={[k / 2, k / 2, e, 20]} /> : <boxGeometry args={[k, e, k]} />}
+        </mesh>
+      )}
+      <mesh material={malzeme} position={merkez} quaternion={q} castShadow receiveShadow>
+        {boru ? <cylinderGeometry args={[k / 2, k / 2, L + e, 20]} /> : <boxGeometry args={[k, L + e, k]} />}
+      </mesh>
+      {/* uç kapağı */}
+      <mesh material={kapak} position={ust.clone().addScaledVector(eksen, L + 0.006)} quaternion={q}>
+        {boru ? <cylinderGeometry args={[k * 0.58, k * 0.58, 0.012, 20]} /> : <boxGeometry args={[k * 1.1, 0.012, k * 1.1]} />}
+      </mesh>
+      {/* gergi teli delikleri (iki yüzde koyu daire) */}
+      {KAS_DELIKLERI.map((f) => (
+        <mesh key={f} material={kapak} position={ust.clone().addScaledVector(eksen, L * f)} quaternion={delikQ}>
+          <cylinderGeometry args={[KAS_DELIK_CAP / 2, KAS_DELIK_CAP / 2, k + 0.003, 12]} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+/**
+ * Demir direk payandası: direkle aynı profil. Üst ucu direğin yüzüne açılı kesimle oturur (kol
+ * direk içine k/2·cot α uzar, dışa taşmaz), alt ucu zemine yatay kesimle basar (k/2·tan α zemine).
+ */
+function Payanda({ ust, alt, k, boru, malzeme }: { ust: THREE.Vector3; alt: THREE.Vector3; k: number; boru: boolean; malzeme: THREE.Material }) {
+  const { orta, q, boy } = useMemo(() => {
+    const d = alt.clone().sub(ust).normalize();
+    const alfa = Math.acos(Math.min(1, Math.abs(d.y))); // dikeyle açı
+    const a = ust.clone().addScaledVector(d, -(k / 2) / Math.max(0.2, Math.tan(alfa)));
+    const b = alt.clone().addScaledVector(d, (k / 2) * Math.tan(alfa));
+    return {
+      orta: a.clone().add(b).multiplyScalar(0.5),
+      q: new THREE.Quaternion().setFromUnitVectors(YUKARI, b.clone().sub(a).normalize()),
+      boy: a.distanceTo(b),
+    };
+  }, [ust, alt, k]);
+  return (
+    <mesh position={orta} quaternion={q} castShadow material={malzeme}>
+      {boru ? <cylinderGeometry args={[k / 2, k / 2, boy, 16]} /> : <boxGeometry args={[k, boy, k]} />}
+    </mesh>
+  );
+}
+
 // ---------- tel yüzeyi ----------
 
 function TelYuzeyi({ kosu, alt, h, malzeme, hucre }: { kosu: Kosu; alt: number; h: number; malzeme: THREE.Material; hucre: [number, number] }) {
@@ -81,6 +147,20 @@ export function kasVektoru(t: Tasarim) {
   if (t.direk.kasTipi === "duz") return { dx: 0, dy: 1 };
   if (t.direk.tip === "beton") return { dx: Math.sin(Math.PI / 6), dy: Math.cos(Math.PI / 6) };
   return { dx: Math.SQRT1_2, dy: Math.SQRT1_2 };
+}
+
+/** Kaş kollarının direğin yerel eksenindeki yönleri (+x: kenarın dışı, z: çit doğrultusu). */
+function kasYonleri(d: Direk, kv: { dx: number; dy: number }, vKas: boolean) {
+  const n = d.dis;
+  const out = [new THREE.Vector3(kv.dx, kv.dy, 0)];
+  if (d.dis2) {
+    // ikinci kenarın dış yönü, direğin yerel eksenine çevrilir
+    const lx = d.dis2[0] * n[0] + d.dis2[1] * n[1];
+    const lz = -d.dis2[0] * n[1] + d.dis2[1] * n[0];
+    out.push(new THREE.Vector3(lx * kv.dx, kv.dy, lz * kv.dx));
+  }
+  if (vKas) out.push(new THREE.Vector3(-kv.dx, kv.dy, 0));
+  return out;
 }
 
 function Direkler({
@@ -175,12 +255,15 @@ function Direkler({
               scale={[1, bitti.current ? 1 : 0.001, 1]}
             >
               <mesh geometry={g ? geoGuclu : geoAra} material={malzeme} position={[0, h / 2, 0]} castShadow receiveShadow />
-              {/* Demir direkte tepe kapağı (beton direkte yok) */}
-              {t.direk.tip !== "beton" && (
+              {/* Demir direkte tepe kapağı (beton direkte yok); kaşlıda kapak kaş ucunda */}
+              {t.direk.tip !== "beton" && !(kas > 0) && (
                 <mesh material={kapakMalzeme} position={[0, h + 0.008, 0]}>
                   {boru ? <cylinderGeometry args={[k * 0.58, k * 0.58, 0.016, 16]} /> : <boxGeometry args={[k * 1.15, 0.016, k * 1.15]} />}
                 </mesh>
               )}
+              {/* Demir direk kaş kolları: direkle aynı profil, gönye birleşim (yerel eksende: +x dış) */}
+              {kas > 0 && !betonDirek &&
+                kasYonleri(d, kv, vKas).map((y, j) => <KasKolu key={j} yon={y} L={kas} k={k} h={h} boru={boru} malzeme={malzeme} kapak={kapakMalzeme} />)}
               {/* Flanş yalnız beton zeminde ve duvar üstünde */}
               {beton && <Flans k={k} malzeme={malzeme} civata dubel={dubel.direk} />}
             </group>
@@ -189,26 +272,36 @@ function Direkler({
                 <cylinderGeometry args={[k * 1.5, k * 1.7, 0.025, 10]} />
               </mesh>
             )}
-            {kas > 0 && (
+            {kas > 0 && betonDirek && (
               <Cubuk a={ust} b={new THREE.Vector3(ust.x + n[0] * kasDx, ust.y + kasDy, ust.z + n[1] * kasDx)} k={betonDirek ? k * 0.85 : k} yuvarlak={boru} malzeme={malzeme} />
             )}
             {/* Profil + eğik kaş: tek köşe direğinden ikinci kenarın dışına ikinci kaş */}
-            {kas > 0 && d.dis2 && (
+            {kas > 0 && betonDirek && d.dis2 && (
               <Cubuk a={ust} b={new THREE.Vector3(ust.x + d.dis2[0] * kasDx, ust.y + kasDy, ust.z + d.dis2[1] * kasDx)} k={k} yuvarlak={boru} malzeme={malzeme} />
             )}
             {/* V kaş: ikinci kol içe doğru */}
-            {kas > 0 && vKas && (
+            {kas > 0 && betonDirek && vKas && (
               <Cubuk a={ust} b={new THREE.Vector3(ust.x - n[0] * kasDx, ust.y + kasDy, ust.z - n[1] * kasDx)} k={betonDirek ? k * 0.85 : k} yuvarlak={boru} malzeme={malzeme} />
             )}
             {d.payanda.map((p, j) => (
               <group key={j}>
-                <Cubuk
-                  a={new THREE.Vector3(d.p[0], d.p[1] + h * 0.72, d.p[2])}
-                  b={new THREE.Vector3(d.p[0] + p[0] * h * 0.6, d.p[1], d.p[2] + p[1] * h * 0.6)}
-                  k={betonDirek ? ara * 0.9 : ara}
-                  yuvarlak={boru}
-                  malzeme={malzeme}
-                />
+                {betonDirek ? (
+                  <Cubuk
+                    a={new THREE.Vector3(d.p[0], d.p[1] + h * 0.72, d.p[2])}
+                    b={new THREE.Vector3(d.p[0] + p[0] * h * 0.6, d.p[1], d.p[2] + p[1] * h * 0.6)}
+                    k={ara * 0.9}
+                    malzeme={malzeme}
+                  />
+                ) : (
+                  // direğin yüzüne (eksenden k/2 dışarı) oturur
+                  <Payanda
+                    ust={new THREE.Vector3(d.p[0] + p[0] * (k / 2), d.p[1] + h * 0.72, d.p[2] + p[1] * (k / 2))}
+                    alt={new THREE.Vector3(d.p[0] + p[0] * h * 0.6, d.p[1], d.p[2] + p[1] * h * 0.6)}
+                    k={ara}
+                    boru={boru}
+                    malzeme={malzeme}
+                  />
+                )}
                 {temelTabla && (
                   <mesh material={tablaMalzeme} position={[d.p[0] + p[0] * h * 0.6, d.p[1] + 0.012, d.p[2] + p[1] * h * 0.6]} receiveShadow>
                     <cylinderGeometry args={[ara * 1.4, ara * 1.6, 0.025, 9]} />
@@ -451,6 +544,32 @@ function PanelCit({
   );
 }
 
+/** Bir koşunun yatay yönü ve dış normali. */
+function kosuYonu(k: Kosu, poli: [number, number][] | null) {
+  const L = Math.hypot(k.b[0] - k.a[0], k.b[2] - k.a[2]) || 1;
+  const yon: [number, number] = [(k.b[0] - k.a[0]) / L, (k.b[2] - k.a[2]) / L];
+  const n = disNormal([(k.a[0] + k.b[0]) / 2, 0, (k.a[2] + k.b[2]) / 2], yon, poli);
+  return { yon, n };
+}
+
+/**
+ * Köşeler: bir koşunun bittiği noktada sonraki koşu başlıyorsa (kapalı arazide son → ilk dahil)
+ * o nokta köşedir. Üst tel / jiletli bu köşelerde iki kenarın kaş kolları arasından dolaştırılır.
+ */
+function kosuKoseleri(kosular: Kosu[], poli: [number, number][] | null) {
+  const out: { p: THREE.Vector3; n1: [number, number]; n2: [number, number]; y1: [number, number]; y2: [number, number] }[] = [];
+  const ayni = (a: Nokta, b: Nokta) => Math.hypot(a[0] - b[0], a[2] - b[2]) < 1e-3;
+  for (let i = 0; i < kosular.length; i++)
+    for (let j = 0; j < kosular.length; j++) {
+      if (i === j || !ayni(kosular[i].b, kosular[j].a)) continue;
+      const A = kosuYonu(kosular[i], poli);
+      const B = kosuYonu(kosular[j], poli);
+      if (Math.abs(A.yon[0] * B.yon[0] + A.yon[1] * B.yon[1]) > 0.999) continue; // düz devam, köşe değil
+      out.push({ p: V(kosular[i].b), n1: A.n, n2: B.n, y1: A.yon, y2: B.yon });
+    }
+  return out;
+}
+
 /** Düzlemsel jiletli: çit düzleminde, iç içe geçen yassı halkalardan bir bant (baklava görünümü). */
 /**
  * Düzlemsel jiletli tel: çit boyunca dizilmiş düz halkalar. Eğik kaşta halkalar kaş koluyla
@@ -483,6 +602,30 @@ function Duzlemsel({ kosular, y, egik, poli, cap, direkK }: { kosular: Kosu[]; y
         out.push({ p, q });
       }
     }
+    // Köşelerde iki kenarın halka bantları arası açık kalmasın: dış normal n1→n2 arasında
+    // dönen ara halkalar (köşe direğinin kaş kolları arasındaki kama doldurulur)
+    for (const c of kosuKoseleri(kosular, poli)) {
+      const adim = 4;
+      for (let s = 1; s < adim; s++) {
+        const f = s / adim;
+        const nx = c.n1[0] * (1 - f) + c.n2[0] * f, nz = c.n1[1] * (1 - f) + c.n2[1] * f;
+        const nl = Math.hypot(nx, nz) || 1;
+        const n: [number, number] = [nx / nl, nz / nl];
+        // halka doğrultusu: normale dik, köşede dönme yönünde
+        const yx = c.y1[0] * (1 - f) + c.y2[0] * f, yz = c.y1[1] * (1 - f) + c.y2[1] * f;
+        const yl = Math.hypot(yx, yz) || 1;
+        const yon = new THREE.Vector3(yx / yl, 0, yz / yl);
+        const kol = egik ? new THREE.Vector3(n[0] * egik.dx, egik.dy, n[1] * egik.dx).normalize() : new THREE.Vector3(0, 1, 0);
+        const normal = new THREE.Vector3().crossVectors(yon, kol).normalize();
+        const ice = normal.x * n[0] + normal.z * n[1] > 0 ? normal.clone().negate() : normal.clone();
+        const q = new THREE.Quaternion().setFromRotationMatrix(m.makeBasis(yon, kol, normal));
+        const p = c.p.clone();
+        p.y += y;
+        p.addScaledVector(kol, R);
+        p.addScaledVector(ice, direkK / 2 + 0.012);
+        out.push({ p, q });
+      }
+    }
     return out;
   }, [kosular, y, egik, poli, R, direkK]);
   return (
@@ -496,7 +639,7 @@ function Duzlemsel({ kosular, y, egik, poli, cap, direkK }: { kosular: Kosu[]; y
 }
 
 /** Jiletli spiral: çit boyunca dizilmiş eğik halkalar. */
-function Jiletli({ kosular, y, cap }: { kosular: Kosu[]; y: number; cap: number }) {
+function Jiletli({ kosular, y, cap, poli }: { kosular: Kosu[]; y: number; cap: number; poli: [number, number][] | null }) {
   const R = cap / 200; // cm çap → m yarıçap
   const halkalar = useMemo(() => {
     const out: { p: THREE.Vector3; q: THREE.Euler }[] = [];
@@ -511,8 +654,20 @@ function Jiletli({ kosular, y, cap }: { kosular: Kosu[]; y: number; cap: number 
         out.push({ p, q: new THREE.Euler(i % 2 ? 0.35 : -0.35, aci, 0, "YXZ") });
       }
     }
+    // köşede spiral dönerek devam eder: iki kenar açısı arasında ara halkalar
+    for (const c of kosuKoseleri(kosular, poli)) {
+      const a1 = Math.atan2(c.y1[0], c.y1[1]);
+      let a2 = Math.atan2(c.y2[0], c.y2[1]);
+      if (a2 - a1 > Math.PI) a2 -= 2 * Math.PI;
+      if (a1 - a2 > Math.PI) a2 += 2 * Math.PI;
+      for (let s = 1; s < 4; s++) {
+        const p = c.p.clone();
+        p.y += y + R;
+        out.push({ p, q: new THREE.Euler(s % 2 ? 0.35 : -0.35, a1 + ((a2 - a1) * s) / 4, 0, "YXZ") });
+      }
+    }
     return out;
-  }, [kosular, y, R]);
+  }, [kosular, y, R, poli]);
   return (
     <Tekrarli
       key={R}
@@ -759,13 +914,14 @@ function DetayKamera({
   noktalar,
   merkez,
   h,
-  aralik,
+  taban,
   onHazir,
 }: {
   noktalar: [number, number][];
   merkez: readonly [number, number];
   h: number;
-  aralik: number;
+  /** duvar üstü montajda duvar yüksekliği; çit bunun üstünde başlar */
+  taban: number;
   onHazir?: (png: string) => void;
 }) {
   const { camera, gl, controls, advance } = useThree() as unknown as {
@@ -786,18 +942,25 @@ function DetayKamera({
     const u1 = new THREE.Vector2(p0[0] - k[0], p0[1] - k[1]).normalize();
     const u2 = new THREE.Vector2(p2[0] - k[0], p2[1] - k[1]).normalize();
     const ic = u1.clone().add(u2).normalize();
-    // Yakın çekim: köşe direği, payandalar ve tel gözleri seçilebilsin
-    const D = h * 0.75 + 0.9;
-    const hedef = new THREE.Vector3(kose.x + ic.x * aralik * 0.3, h * 0.52, kose.y + ic.y * aralik * 0.3);
-    camera.position.set(kose.x - ic.x * D, h * 0.8 + 0.3, kose.y - ic.y * D);
-    camera.fov = 50;
+    // Yakın çekim, köşe direği tam ortada: zeminden (duvar varsa duvar dibinden) kaş ucuna kadar
+    // tüm yükseklik PDF kutusuna (DETAY_ORAN, ortadan kırpılır) %10 payla sığar
+    const ust = taban + h + 0.45; // kaş / jiletli payı
+    const hedef = new THREE.Vector3(kose.x, ust / 2, kose.y);
+    camera.fov = 45;
+    const tuvalOran = gl.domElement.width / Math.max(1, gl.domElement.height);
+    // kırpma sonrası kalan dikey görüş: tuval kutudan darsa üst-alt kırpılır
+    const yariDikey = Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.min(1, tuvalOran / DETAY_ORAN));
+    const D = ((ust / 2) * 1.1) / Math.tan(yariDikey) + 0.3;
+    // dışarıdan, hafif yukarıdan bakış (yükselti ~12°)
+    const yatay = D * Math.cos(0.21);
+    camera.position.set(kose.x - ic.x * yatay, ust / 2 + D * Math.sin(0.21), kose.y - ic.y * yatay);
     camera.updateProjectionMatrix();
     camera.lookAt(hedef);
     if (controls) {
       controls.target.copy(hedef);
       controls.update();
     }
-  }, [noktalar, merkez, h, aralik, camera, controls]);
+  }, [noktalar, merkez, h, taban, camera, controls, gl]);
 
   // Kareleri kendimiz çizeriz (frameloop="never"): tarayıcı ekran döngüsünü yavaşlatsa da
   // (arka plan sekmesi, düşük güç) görüntü birkaç yüz milisaniyede hazır olur
@@ -1088,9 +1251,10 @@ function Icerik({
       const orta: Nokta = [(k.a[0] + k.b[0]) / 2, 0, (k.a[2] + k.b[2]) / 2];
       const n = disNormal(orta, yon, poli);
       for (let r = 0; r < t.ekstra.ustSira; r++) {
-        const f = t.ekstra.ustSira === 1 ? 1 : (r + 1) / t.ekstra.ustSira;
+        // kaşlıda teller kol üstündeki deliklerden geçer (3 delik); kaşsızda direk üstünde
+        const f = kas || kasYatay ? KAS_DELIKLERI[Math.min(r, KAS_DELIKLERI.length - 1)] : t.ekstra.ustSira === 1 ? 1 : (r + 1) / t.ekstra.ustSira;
         const d = kasYatay * f;
-        const y = h + 0.08 + (kas ? kas * f : 0.12 * (r + 1));
+        const y = h + (kas ? kas * f : 0.08 + 0.12 * (r + 1));
         // V kaşta aynı sıra iki kola da çekilir (yön: dış ve iç)
         for (const yan of t.direk.kasli && t.direk.kasTipi === "v" ? [1, -1] : [1])
           out.push([
@@ -1099,6 +1263,19 @@ function Icerik({
           ]);
       }
     }
+    // Köşede tel bir kenarın kaş kolundan diğerininkine çekilir: köşe açık kalmaz
+    for (const c of kosuKoseleri(sonuc.kosular, poli))
+      for (let r = 0; r < t.ekstra.ustSira; r++) {
+        const f = kas || kasYatay ? KAS_DELIKLERI[Math.min(r, KAS_DELIKLERI.length - 1)] : t.ekstra.ustSira === 1 ? 1 : (r + 1) / t.ekstra.ustSira;
+        const d = kasYatay * f;
+        const y = h + (kas ? kas * f : 0.08 + 0.12 * (r + 1));
+        if (d < 1e-3) continue; // kaşsız / düz kaşta teller zaten köşede buluşur
+        for (const yan of t.direk.kasli && t.direk.kasTipi === "v" ? [1, -1] : [1])
+          out.push([
+            new THREE.Vector3(c.p.x + c.n1[0] * d * yan, c.p.y + y, c.p.z + c.n1[1] * d * yan),
+            new THREE.Vector3(c.p.x + c.n2[0] * d * yan, c.p.y + y, c.p.z + c.n2[1] * d * yan),
+          ]);
+      }
     return out;
   }, [sonuc.kosular, t.ekstra.ustTel, t.ekstra.ustSira, t.direk.kasli, t.direk.kasTipi, kas, kasYatay, h, poli]);
 
@@ -1238,7 +1415,7 @@ function Icerik({
         {gergiSira.length > 0 && <YatayTeller kosular={sonuc.kosular} yukseklikler={gergiSira} renk={pvc ? "#2f9a58" : "#aeb8c4"} />}
         {anaDikenli.length > 0 && <DikenliTeller hatlar={anaDikenli} />}
         {ustHatlar.length > 0 && <DikenliTeller hatlar={ustHatlar} />}
-        {t.ekstra.ustTel === "jiletli" && tip !== "dikenli" && <Jiletli kosular={sonuc.kosular} y={h + 0.08 + kas * 0.5} cap={t.ekstra.jiletliCap} />}
+        {t.ekstra.ustTel === "jiletli" && tip !== "dikenli" && <Jiletli kosular={sonuc.kosular} y={h + 0.08 + kas * 0.5} cap={t.ekstra.jiletliCap} poli={poli} />}
         {t.ekstra.ustTel === "duzlemsel" && tip !== "dikenli" && (
           <Duzlemsel
             kosular={sonuc.kosular}
@@ -1270,7 +1447,7 @@ function Icerik({
 
       {!detay && etiketDom && <EtiketYansit etiketler={etiketler} domlar={etiketDom} />}
       {detay ? (
-        <DetayKamera noktalar={noktalar} merkez={merkez} h={h} aralik={t.direk.aralik} onHazir={onHazir} />
+        <DetayKamera noktalar={noktalar} merkez={merkez} h={h} taban={duvarH} onHazir={onHazir} />
       ) : (
         <KameraRig boyut={boyut} anahtar={`${t.sekil}-${Math.round(boyut / 5)}`} gorunum={gorunum} kose={koseGorunum} />
       )}
