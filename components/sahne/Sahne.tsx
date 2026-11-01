@@ -11,6 +11,8 @@ import { VARSAYILAN_AYARLAR, direkRengi, direkTipi, ustOlcu } from "@/lib/katalo
 import { Tasarim, kenarHarfi, sekilNoktalari } from "@/lib/tasarim";
 import { disNormal, icinde } from "@/lib/geometri";
 import { sayiOku } from "@/lib/sayi";
+import { varlik } from "@/lib/yol";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { betonDokusu, hucreBoyu, telDokusu } from "./dokular";
 
 // ---------- yardımcılar ----------
@@ -110,6 +112,58 @@ function Payanda({ ust, alt, k, boru, malzeme }: { ust: THREE.Vector3; alt: THRE
       {boru ? <cylinderGeometry args={[k / 2, k / 2, boy, 16]} /> : <boxGeometry args={[k, boy, k]} />}
     </mesh>
   );
+}
+
+// ---------- beton direk modeli ----------
+
+/**
+ * Beton çit direği 3D modeli (public/modeller/beton_direk.obj): 2,94 m, gövde 0–2,46 m
+ * (alt 12, üst 10 cm), üstte gövdeyle tek döküm konsol (kaş). Model, plandaki direk boyuna ve
+ * kaş açısı / boyuna göre uyarlanır: gövde dikeyde ölçeklenir, konsol kaş vektörüne kaydırılır;
+ * böylece üst teller konsolun üstündeki yerlerine oturur.
+ */
+const BETON_MODEL = { govdeUst: 2.46, kolDy: 0.46, kolEgim: 0.42 / 0.46, kesit: 0.1 };
+let betonModelSoz: Promise<THREE.BufferGeometry> | null = null;
+function betonModeliYukle() {
+  betonModelSoz ??= import("three/examples/jsm/loaders/OBJLoader.js").then(({ OBJLoader }) =>
+    new OBJLoader().loadAsync(varlik("/modeller/beton_direk.obj")).then((g) => {
+      const parcalar: THREE.BufferGeometry[] = [];
+      g.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.isMesh) parcalar.push(m.geometry.index ? m.geometry.toNonIndexed() : m.geometry);
+      });
+      return parcalar.length > 1 ? mergeGeometries(parcalar)! : parcalar[0];
+    }),
+  );
+  return betonModelSoz;
+}
+function BetonDirekModeli({ h, kasDx, kasDy, k, malzeme, aci = 0, ayna = false }: { h: number; kasDx: number; kasDy: number; k: number; malzeme: THREE.Material; aci?: number; ayna?: boolean }) {
+  const [ham, setHam] = useState<THREE.BufferGeometry | null>(null);
+  useEffect(() => void betonModeliYukle().then(setHam), []);
+  const geo = useMemo(() => {
+    if (!ham) return null;
+    const g = ham.clone();
+    const p = g.attributes.position as THREE.BufferAttribute;
+    const M = BETON_MODEL;
+    const sk = k / M.kesit; // kesit ölçeği
+    const sy = h / M.govdeUst;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      if (y <= M.govdeUst) p.setXYZ(i, x * sk, y * sy, z * sk);
+      else {
+        // konsol: eksen çizgisinden sapma korunur, eksen plandaki kaş vektörüne taşınır
+        const u = (y - M.govdeUst) / M.kolDy; // 0..1 konsol boyunca
+        const sap = x - u * M.kolDy * M.kolEgim;
+        p.setXYZ(i, sap * sk + u * kasDx, h + u * kasDy, z * sk);
+      }
+    }
+    p.needsUpdate = true;
+    g.computeVertexNormals();
+    return g;
+  }, [ham, h, kasDx, kasDy, k]);
+  useAt(geo ?? undefined);
+  if (!geo) return null;
+  return <mesh geometry={geo} material={malzeme} rotation={[0, aci, 0]} scale={[ayna ? -1 : 1, 1, 1]} castShadow receiveShadow />;
 }
 
 // ---------- tel yüzeyi ----------
@@ -254,7 +308,25 @@ function Direkler({
               rotation={[0, -Math.atan2(n[1], n[0]), 0]}
               scale={[1, bitti.current ? 1 : 0.001, 1]}
             >
-              <mesh geometry={g ? geoGuclu : geoAra} material={malzeme} position={[0, h / 2, 0]} castShadow receiveShadow />
+              {betonDirek ? (
+                <>
+                  {/* beton direk: gerçek model, konsol (kaş) gövdeyle tek parça; kaş yoksa konsol gövde tepesine katlanır */}
+                  <BetonDirekModeli h={h} kasDx={kas > 0 ? kasDx : 0} kasDy={kas > 0 ? kasDy : 0} k={k} malzeme={malzeme} />
+                  {kas > 0 && vKas && <BetonDirekModeli h={h} kasDx={kasDx} kasDy={kasDy} k={k} malzeme={malzeme} ayna />}
+                  {kas > 0 && d.dis2 && (
+                    <BetonDirekModeli
+                      h={h}
+                      kasDx={kasDx}
+                      kasDy={kasDy}
+                      k={k}
+                      malzeme={malzeme}
+                      aci={Math.atan2(-(-d.dis2[0] * n[1] + d.dis2[1] * n[0]), d.dis2[0] * n[0] + d.dis2[1] * n[1])}
+                    />
+                  )}
+                </>
+              ) : (
+                <mesh geometry={g ? geoGuclu : geoAra} material={malzeme} position={[0, h / 2, 0]} castShadow receiveShadow />
+              )}
               {/* Demir direkte tepe kapağı (beton direkte yok); kaşlıda kapak kaş ucunda */}
               {t.direk.tip !== "beton" && !(kas > 0) && (
                 <mesh material={kapakMalzeme} position={[0, h + 0.008, 0]}>
@@ -272,17 +344,8 @@ function Direkler({
                 <cylinderGeometry args={[k * 1.5, k * 1.7, 0.025, 10]} />
               </mesh>
             )}
-            {kas > 0 && betonDirek && (
-              <Cubuk a={ust} b={new THREE.Vector3(ust.x + n[0] * kasDx, ust.y + kasDy, ust.z + n[1] * kasDx)} k={betonDirek ? k * 0.85 : k} yuvarlak={boru} malzeme={malzeme} />
-            )}
             {/* Profil + eğik kaş: tek köşe direğinden ikinci kenarın dışına ikinci kaş */}
-            {kas > 0 && betonDirek && d.dis2 && (
-              <Cubuk a={ust} b={new THREE.Vector3(ust.x + d.dis2[0] * kasDx, ust.y + kasDy, ust.z + d.dis2[1] * kasDx)} k={k} yuvarlak={boru} malzeme={malzeme} />
-            )}
             {/* V kaş: ikinci kol içe doğru */}
-            {kas > 0 && betonDirek && vKas && (
-              <Cubuk a={ust} b={new THREE.Vector3(ust.x - n[0] * kasDx, ust.y + kasDy, ust.z - n[1] * kasDx)} k={betonDirek ? k * 0.85 : k} yuvarlak={boru} malzeme={malzeme} />
-            )}
             {d.payanda.map((p, j) => (
               <group key={j}>
                 {betonDirek ? (
