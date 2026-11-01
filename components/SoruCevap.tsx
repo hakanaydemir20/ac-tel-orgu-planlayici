@@ -91,7 +91,7 @@ interface Adim {
 }
 
 /** "Soru-cevap": planı tek tek sorularla kurar. Her ekranda tek soru; seçimler canlı uygulanır, sonunda 3D'ye döner. */
-export function SoruCevap({ kapat }: { kapat: () => void }) {
+export function SoruCevap({ kapat, bitir }: { kapat: () => void; bitir?: () => void }) {
   const { tasarim: t, guncelle, zeminSec, telTipiSec, direkTipiSec } = useTasarim();
   const ayarlar = useEtkinAyarlar(t);
   const sonuc = useMemo(() => hesapla(t, ayarlar), [t, ayarlar]);
@@ -641,7 +641,7 @@ export function SoruCevap({ kapat }: { kapat: () => void }) {
             <button
               type="button"
               autoFocus
-              onClick={kapat}
+              onClick={bitir ?? kapat}
               className="ml-auto rounded-xl bg-ac-kirmizi px-6 py-3.5 text-base font-extrabold uppercase tracking-wider shadow-[0_8px_30px_-6px_var(--color-ac-kirmizi)] hover:bg-ac-kirmizi-acik sm:ml-0 sm:px-10"
             >
               3D planı oluştur ✓

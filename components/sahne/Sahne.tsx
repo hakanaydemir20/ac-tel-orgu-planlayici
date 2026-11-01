@@ -114,6 +114,35 @@ function Payanda({ ust, alt, k, boru, malzeme }: { ust: THREE.Vector3; alt: THRE
   );
 }
 
+// ---------- açılış animasyonu ----------
+
+/** Çitlerin tepeden düşerek yerleşmesi: önce direkler sırayla, ardından teller topluca. */
+const DUSUS = { yukseklik: 7, direkGecikme: 0.25, direkAra: 0.018, direkSure: 0.55, telSure: 0.7 };
+/** Sekmeli iniş (0 → 1): yere çarpıp iki kez hafifçe sıçrar. */
+function sekme(x: number) {
+  const n = 7.5625, d = 2.75;
+  if (x < 1 / d) return n * x * x;
+  if (x < 2 / d) return n * (x -= 1.5 / d) * x + 0.75;
+  if (x < 2.5 / d) return n * (x -= 2.25 / d) * x + 0.9375;
+  return n * (x -= 2.625 / d) * x + 0.984375;
+}
+/** İçindekileri gecikmeyle tepeden düşürür (teller, üst teller). */
+function Dusen({ baslangic, gecikme, children }: { baslangic: React.RefObject<number>; gecikme: number; children: React.ReactNode }) {
+  const ref = useRef<THREE.Group>(null);
+  const bitti = useRef(false);
+  useFrame(() => {
+    if (bitti.current || !ref.current) return;
+    const k = THREE.MathUtils.clamp(((performance.now() - baslangic.current) / 1000 - gecikme) / DUSUS.telSure, 0, 1);
+    ref.current.position.y = (1 - sekme(k)) * DUSUS.yukseklik;
+    if (k >= 1) bitti.current = true;
+  });
+  return (
+    <group ref={ref} position={[0, gecikme < 0 ? 0 : DUSUS.yukseklik, 0]}>
+      {children}
+    </group>
+  );
+}
+
 // ---------- beton direk modeli ----------
 
 /**
@@ -122,7 +151,8 @@ function Payanda({ ust, alt, k, boru, malzeme }: { ust: THREE.Vector3; alt: THRE
  * kaş açısı / boyuna göre uyarlanır: gövde dikeyde ölçeklenir, konsol kaş vektörüne kaydırılır;
  * böylece üst teller konsolun üstündeki yerlerine oturur.
  */
-const BETON_MODEL = { govdeUst: 2.46, kolDy: 0.46, kolEgim: 0.42 / 0.46, kesit: 0.1 };
+// kolSapOrta / kolSapYari: konsol köşelerinin kol ekseninden yatay sapmasının ortası ve yarısı (modelden ölçüldü)
+const BETON_MODEL = { govdeUst: 2.46, kolDy: 0.46, kolEgim: 0.42 / 0.46, kesit: 0.1, kolSapOrta: -0.0064, kolSapYari: 0.0798 };
 let betonModelSoz: Promise<THREE.BufferGeometry> | null = null;
 function betonModeliYukle() {
   betonModelSoz ??= import("three/examples/jsm/loaders/OBJLoader.js").then(({ OBJLoader }) =>
@@ -152,9 +182,13 @@ function BetonDirekModeli({ h, kasDx, kasDy, k, malzeme, aci = 0, ayna = false }
       if (y <= M.govdeUst) p.setXYZ(i, x * sk, y * sy, z * sk);
       else {
         // konsol: eksen çizgisinden sapma korunur, eksen plandaki kaş vektörüne taşınır
+        // konsol kesiti direk kesitiyle aynı (10x10 direkte kaş da 10x10): modeldeki kol
+        // genişliği -1..1'e indirgenip kola dik doğrultuda k/2'ye ölçeklenir
         const u = (y - M.govdeUst) / M.kolDy; // 0..1 konsol boyunca
-        const sap = x - u * M.kolDy * M.kolEgim;
-        p.setXYZ(i, sap * sk + u * kasDx, h + u * kasDy, z * sk);
+        const sap = (x - u * M.kolDy * M.kolEgim - M.kolSapOrta) / M.kolSapYari;
+        const L = Math.hypot(kasDx, kasDy);
+        const [ax, ay] = L > 1e-6 ? [kasDx / L, kasDy / L] : [0, 1];
+        p.setXYZ(i, u * kasDx + sap * (k / 2) * ay, h + u * kasDy - sap * (k / 2) * ax, z * sk);
       }
     }
     p.needsUpdate = true;
@@ -263,7 +297,7 @@ function Direkler({
   const geoGuclu = useMemo(() => govde(guclu), [boru, betonDirek, guclu, h]); // eslint-disable-line react-hooks/exhaustive-deps
   useAt(malzeme, geoAra, geoGuclu);
 
-  // Açılışta direkler sırayla "dikilir"
+  // Açılışta direkler sırayla tepeden düşüp zemine oturur (hafif sekme)
   const refler = useRef<(THREE.Group | null)[]>([]);
   const bitti = useRef(!animasyon);
   useFrame(() => {
@@ -272,9 +306,9 @@ function Direkler({
     let hepsi = true;
     refler.current.forEach((g, i) => {
       if (!g) return;
-      const k = THREE.MathUtils.clamp((s - 0.5 - i * 0.012) / 0.35, 0, 1);
+      const k = THREE.MathUtils.clamp((s - DUSUS.direkGecikme - i * DUSUS.direkAra) / DUSUS.direkSure, 0, 1);
       if (k < 1) hepsi = false;
-      g.scale.y = Math.max(0.001, 1 - (1 - k) ** 3);
+      g.position.y = (1 - sekme(k)) * DUSUS.yukseklik;
     });
     if (hepsi) bitti.current = true;
   });
@@ -300,13 +334,11 @@ function Direkler({
         const n = d.dis; // hesapta kenarın ortasından bulunan dış yön
         const ust = new THREE.Vector3(d.p[0], d.p[1] + h, d.p[2]);
         return (
-          <group key={i} position={[0, 0, 0]}>
+          <group key={i} ref={(el) => void (refler.current[i] = el)} position={[0, bitti.current ? 0 : DUSUS.yukseklik, 0]}>
             <group
-              ref={(el) => void (refler.current[i] = el)}
               position={[d.p[0], d.p[1], d.p[2]]}
               // Direk gövdesi ve flanş plakası bulunduğu kenara paralel döner (kenar dış yönüne göre)
               rotation={[0, -Math.atan2(n[1], n[0]), 0]}
-              scale={[1, bitti.current ? 1 : 0.001, 1]}
             >
               {betonDirek ? (
                 <>
@@ -1117,6 +1149,8 @@ export interface SahneProps {
   onNoktaTasi?: (i: number, p: [number, number]) => void;
   /** Beton zeminde dübel adetleri (Ayarlar); yakın çekimde başları çizilir */
   dubel?: { direk: number; payanda: number };
+  /** Değişince açılış animasyonu (çitlerin tepeden düşmesi) yeniden oynar */
+  animasyonAnahtari?: number;
   tasarim: Tasarim;
   sonuc: Sonuc;
 }
@@ -1229,6 +1263,7 @@ function Icerik({
   etiketDom,
   gorunum = { tur: "kose", n: 0 },
   onNoktaTasi,
+  animasyonAnahtari: animAnahtar = 0,
 }: SahneProps & {
   etiketBildir?: (e: EtiketVeri[]) => void;
   etiketDom?: React.RefObject<Map<number, HTMLElement>>;
@@ -1236,6 +1271,7 @@ function Icerik({
 }) {
   const detay = mod === "detay";
   const baslangic = useRef(performance.now());
+  useMemo(() => void (baslangic.current = performance.now()), [animAnahtar]);
   const { noktalar, kapali } = useMemo(() => sekilNoktalari(t), [t]);
   const poli = kapali ? noktalar : detay && noktalar.length >= 3 ? noktalar : null;
 
@@ -1460,6 +1496,7 @@ function Icerik({
         {duvarH > 0 && <BetonDuvar kosular={sonuc.kosular} h={duvarH} />}
         {/* Duvar üstü montajda çit duvarın tepesine oturur */}
         <group position={[0, duvarH > 0 ? duvarH + 0.04 : 0, 0]}>
+        <Dusen key={`t${animAnahtar}`} baslangic={baslangic} gecikme={detay ? -10 : DUSUS.direkGecikme + sonuc.direkler.length * DUSUS.direkAra + DUSUS.direkSure * 0.6}>
         {tip === "panel" ? (
           <PanelCit
             kosular={sonuc.kosular}
@@ -1490,7 +1527,8 @@ function Icerik({
           />
         )}
 
-        <Direkler direkler={sonuc.direkler} t={t} poli={poli} baslangic={baslangic} animasyon={!detay} dubel={dubel} />
+        </Dusen>
+        <Direkler key={`d${animAnahtar}`} direkler={sonuc.direkler} t={t} poli={poli} baslangic={baslangic} animasyon={!detay} dubel={dubel} />
         </group>
         <Babalar
           babalar={sonuc.babalar ?? []}

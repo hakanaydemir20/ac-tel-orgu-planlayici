@@ -45,6 +45,8 @@ export function Tasarimci() {
   const cikti = useTeklifCikti(tasarim, sonuc);
   const [sor, setSor] = useState(false);
   const [sihirbaz, setSihirbaz] = useState(false);
+  // soru-cevap "3D planı oluştur" ile kapanınca çitler yeniden tepeden düşerek yerleşir
+  const [animAnahtar, setAnimAnahtar] = useState(0);
   const [uretim, setUretim] = useState(false);
   const [kaydedildi, setKaydedildi] = useState(false);
 
@@ -106,6 +108,7 @@ export function Tasarimci() {
             sonuc={sahneSonuc}
             onKenarOlcu={(i, L) => guncelle((x) => kenarOlcusuYaz(x, i, L))}
             onNoktaTasi={(i, p) => guncelle((x) => noktaTasi(x, i, p))}
+            animasyonAnahtari={animAnahtar}
           />
 
           <FiyatOzeti sonuc={sonuc} tasarim={tasarim} cikti={cikti} />
@@ -134,7 +137,7 @@ export function Tasarimci() {
       {ayar && <AyarPaneli kapat={() => setAyar(false)} />}
       {liste && <TeklifListesi kapat={() => setListe(false)} />}
       {yeni && <YeniTeklif kapat={() => setYeni(false)} />}
-      {sihirbaz && <SoruCevap kapat={() => setSihirbaz(false)} />}
+      {sihirbaz && <SoruCevap kapat={() => setSihirbaz(false)} bitir={() => (setSihirbaz(false), setAnimAnahtar((n) => n + 1))} />}
       {uretim &&
         (() => {
           const plan = citUretimi(tasarim, sonuc, ayarlar);
