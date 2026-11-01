@@ -116,8 +116,12 @@ function Payanda({ ust, alt, k, boru, malzeme }: { ust: THREE.Vector3; alt: THRE
 
 // ---------- açılış animasyonu ----------
 
-/** Çitlerin tepeden düşerek yerleşmesi: önce direkler sırayla, ardından teller topluca. */
-const DUSUS = { yukseklik: 7, direkGecikme: 0.25, direkAra: 0.018, direkSure: 0.55, telSure: 0.7 };
+/**
+ * Açılış: kamera uzaktan köşeye yaklaşırken direkler görünmeyen bir yükseklikten düşer. Dalga
+ * görünüm köşesindeki direkten başlar, çit boyunca iki yana yayılır; en uzaktaki en son düşer.
+ * Dalga başladıktan 2 sn sonra teller aynı köşeden rulodan serilir gibi iki yana açılır.
+ */
+const DUSUS = { yukseklik: 60, direkGecikme: 0.6, direkSure: 1.15, dalgaSuresi: 2.6, telGecikme: 2, telSuresi: 3.2, telSure: 0.7 };
 /** Sekmeli iniş (0 → 1): yere çarpıp iki kez hafifçe sıçrar. */
 function sekme(x: number) {
   const n = 7.5625, d = 2.75;
@@ -126,18 +130,71 @@ function sekme(x: number) {
   if (x < 2.5 / d) return n * (x -= 2.25 / d) * x + 0.9375;
   return n * (x -= 2.625 / d) * x + 0.984375;
 }
-/** İçindekileri gecikmeyle tepeden düşürür (teller, üst teller). */
-function Dusen({ baslangic, gecikme, children }: { baslangic: React.RefObject<number>; gecikme: number; children: React.ReactNode }) {
+/**
+ * Çit boyunca (çevre üzerinden) görünüm köşesine uzaklık: düşme dalgası ve tel serilmesi bununla
+ * sıralanır. Kapalı arazide iki yönden kısa olan alınır.
+ */
+function cevreMesafesi(noktalar: [number, number][], kapali: boolean, bas: number) {
+  const n = noktalar.length;
+  const sira = kapali ? Array.from({ length: n + 1 }, (_, i) => noktalar[(bas + i) % n]) : noktalar;
+  const kum = [0];
+  for (let i = 1; i < sira.length; i++) kum.push(kum[i - 1] + Math.hypot(sira[i][0] - sira[i - 1][0], sira[i][1] - sira[i - 1][1]));
+  const P = kum.at(-1)!;
+  const olc = (x: number, z: number) => {
+    let en = Infinity, s = 0;
+    for (let i = 1; i < sira.length; i++) {
+      const [ax, az] = sira[i - 1], [bx, bz] = sira[i];
+      const L = Math.hypot(bx - ax, bz - az) || 1e-9;
+      const t = THREE.MathUtils.clamp(((x - ax) * (bx - ax) + (z - az) * (bz - az)) / (L * L), 0, 1);
+      const d = Math.hypot(ax + t * (bx - ax) - x, az + t * (bz - az) - z);
+      if (d < en) (en = d), (s = kum[i - 1] + t * L);
+    }
+    return kapali ? Math.min(s, P - s) : s;
+  };
+  return { olc, enUzak: kapali ? P / 2 : P };
+}
+
+/**
+ * Bir koşunun telleri: köşeye yakın ucundan uzak ucuna doğru "rulodan serilir" (koşu boyunca
+ * ölçeklenerek açılır). Serilme cephesi çevre mesafesiyle ilerler; bitince ölçek 1'de kalır.
+ */
+function Seril({ kosu, olc, hiz, baslangic, gecikme, children }: { kosu: Kosu; olc: (x: number, z: number) => number; hiz: number; baslangic: React.RefObject<number>; gecikme: number | null; children: React.ReactNode }) {
   const ref = useRef<THREE.Group>(null);
-  const bitti = useRef(false);
+  const { yakin, aci, d0, L } = useMemo(() => {
+    const da = olc(kosu.a[0], kosu.a[2]);
+    const db = olc(kosu.b[0], kosu.b[2]);
+    const [n, u] = da <= db ? [kosu.a, kosu.b] : [kosu.b, kosu.a];
+    return { yakin: n, aci: -Math.atan2(u[2] - n[2], u[0] - n[0]), d0: Math.min(da, db), L: Math.hypot(u[0] - n[0], u[2] - n[2]) || 1 };
+  }, [kosu, olc]);
+  const bitti = useRef(gecikme === null);
   useFrame(() => {
-    if (bitti.current || !ref.current) return;
-    const k = THREE.MathUtils.clamp(((performance.now() - baslangic.current) / 1000 - gecikme) / DUSUS.telSure, 0, 1);
-    ref.current.position.y = (1 - sekme(k)) * DUSUS.yukseklik;
+    if (bitti.current || !ref.current || gecikme === null) return;
+    const T = (performance.now() - baslangic.current) / 1000 - gecikme;
+    const k = THREE.MathUtils.clamp((T * hiz - d0) / L, 0, 1);
+    ref.current.scale.x = Math.max(1e-4, k);
+    ref.current.visible = k > 0;
     if (k >= 1) bitti.current = true;
   });
   return (
-    <group ref={ref} position={[0, gecikme < 0 ? 0 : DUSUS.yukseklik, 0]}>
+    <group position={[yakin[0], 0, yakin[2]]} rotation={[0, aci, 0]}>
+      <group ref={ref} scale={[gecikme === null ? 1 : 1e-4, 1, 1]} visible={gecikme === null}>
+        <group rotation={[0, -aci, 0]}>
+          <group position={[-yakin[0], 0, -yakin[2]]}>{children}</group>
+        </group>
+      </group>
+    </group>
+  );
+}
+
+/** İçindekileri belli bir anda görünür yapar (köşe parçaları serilme cephesi oraya varınca). */
+function Belir({ baslangic, an, children }: { baslangic: React.RefObject<number>; an: number | null; children: React.ReactNode }) {
+  const ref = useRef<THREE.Group>(null);
+  useFrame(() => {
+    if (an === null || !ref.current || ref.current.visible) return;
+    if ((performance.now() - baslangic.current) / 1000 >= an) ref.current.visible = true;
+  });
+  return (
+    <group ref={ref} visible={an === null}>
       {children}
     </group>
   );
@@ -258,6 +315,7 @@ function Direkler({
   baslangic,
   animasyon = true,
   dubel,
+  gecikmeler,
 }: {
   direkler: Direk[];
   t: Tasarim;
@@ -265,6 +323,8 @@ function Direkler({
   baslangic: React.RefObject<number>;
   animasyon?: boolean;
   dubel: { direk: number; payanda: number };
+  /** açılışta her direğin düşmeye başlayacağı an (sn) */
+  gecikmeler?: number[];
 }) {
   const dt = direkTipi(t.direk.tip);
   const h = t.tel.yukseklik + 0.08;
@@ -306,9 +366,10 @@ function Direkler({
     let hepsi = true;
     refler.current.forEach((g, i) => {
       if (!g) return;
-      const k = THREE.MathUtils.clamp((s - DUSUS.direkGecikme - i * DUSUS.direkAra) / DUSUS.direkSure, 0, 1);
+      const k = THREE.MathUtils.clamp((s - (gecikmeler?.[i] ?? DUSUS.direkGecikme)) / DUSUS.direkSure, 0, 1);
       if (k < 1) hepsi = false;
       g.position.y = (1 - sekme(k)) * DUSUS.yukseklik;
+      g.visible = k > 0; // düşmeye başlamayan direk gökyüzünde görünmesin
     });
     if (hepsi) bitti.current = true;
   });
@@ -334,7 +395,7 @@ function Direkler({
         const n = d.dis; // hesapta kenarın ortasından bulunan dış yön
         const ust = new THREE.Vector3(d.p[0], d.p[1] + h, d.p[2]);
         return (
-          <group key={i} ref={(el) => void (refler.current[i] = el)} position={[0, bitti.current ? 0 : DUSUS.yukseklik, 0]}>
+          <group key={i} ref={(el) => void (refler.current[i] = el)} position={[0, bitti.current ? 0 : DUSUS.yukseklik, 0]} visible={bitti.current}>
             <group
               position={[d.p[0], d.p[1], d.p[2]]}
               // Direk gövdesi ve flanş plakası bulunduğu kenara paralel döner (kenar dış yönüne göre)
@@ -670,12 +731,12 @@ function kosuKoseleri(kosular: Kosu[], poli: [number, number][] | null) {
  * Düzlemsel jiletli tel: çit boyunca dizilmiş düz halkalar. Eğik kaşta halkalar kaş koluyla
  * aynı açıda dışa yatar ve kola teğet oturur; aksi halde çitin tepesinde dik durur.
  */
-function Duzlemsel({ kosular, y, egik, poli, cap, direkK }: { kosular: Kosu[]; y: number; egik: { dx: number; dy: number } | null; poli: [number, number][] | null; cap: number; direkK: number }) {
+function Duzlemsel({ kosular, y, egik, poli, cap, direkK, parca = "hepsi", tumKosular = kosular }: { kosular: Kosu[]; y: number; egik: { dx: number; dy: number } | null; poli: [number, number][] | null; cap: number; direkK: number; parca?: "hepsi" | "kosu" | "kose"; tumKosular?: Kosu[] }) {
   const R = cap / 200; // cm çap → m yarıçap
   const halkalar = useMemo(() => {
     const out: { p: THREE.Vector3; q: THREE.Quaternion }[] = [];
     const m = new THREE.Matrix4();
-    for (const k of kosular) {
+    for (const k of parca === "kose" ? [] : kosular) {
       const a = V(k.a);
       const b = V(k.b);
       const L = Math.hypot(b.x - a.x, b.z - a.z) || 1;
@@ -699,7 +760,7 @@ function Duzlemsel({ kosular, y, egik, poli, cap, direkK }: { kosular: Kosu[]; y
     }
     // Köşelerde iki kenarın halka bantları arası açık kalmasın: dış normal n1→n2 arasında
     // dönen ara halkalar (köşe direğinin kaş kolları arasındaki kama doldurulur)
-    for (const c of kosuKoseleri(kosular, poli)) {
+    for (const c of parca === "kosu" ? [] : kosuKoseleri(tumKosular, poli)) {
       const adim = 4;
       for (let s = 1; s < adim; s++) {
         const f = s / adim;
@@ -722,7 +783,7 @@ function Duzlemsel({ kosular, y, egik, poli, cap, direkK }: { kosular: Kosu[]; y
       }
     }
     return out;
-  }, [kosular, y, egik, poli, R, direkK]);
+  }, [kosular, y, egik, poli, R, direkK, parca, tumKosular]);
   return (
     <Tekrarli
       key={R} // çap değişince halka geometrisi yeniden kurulsun
@@ -734,11 +795,11 @@ function Duzlemsel({ kosular, y, egik, poli, cap, direkK }: { kosular: Kosu[]; y
 }
 
 /** Jiletli spiral: çit boyunca dizilmiş eğik halkalar. */
-function Jiletli({ kosular, y, cap, poli }: { kosular: Kosu[]; y: number; cap: number; poli: [number, number][] | null }) {
+function Jiletli({ kosular, y, cap, poli, parca = "hepsi", tumKosular = kosular }: { kosular: Kosu[]; y: number; cap: number; poli: [number, number][] | null; parca?: "hepsi" | "kosu" | "kose"; tumKosular?: Kosu[] }) {
   const R = cap / 200; // cm çap → m yarıçap
   const halkalar = useMemo(() => {
     const out: { p: THREE.Vector3; q: THREE.Euler }[] = [];
-    for (const k of kosular) {
+    for (const k of parca === "kose" ? [] : kosular) {
       const a = V(k.a);
       const b = V(k.b);
       const aci = Math.atan2(b.x - a.x, b.z - a.z);
@@ -750,7 +811,7 @@ function Jiletli({ kosular, y, cap, poli }: { kosular: Kosu[]; y: number; cap: n
       }
     }
     // köşede spiral dönerek devam eder: iki kenar açısı arasında ara halkalar
-    for (const c of kosuKoseleri(kosular, poli)) {
+    for (const c of parca === "kosu" ? [] : kosuKoseleri(tumKosular, poli)) {
       const a1 = Math.atan2(c.y1[0], c.y1[1]);
       let a2 = Math.atan2(c.y2[0], c.y2[1]);
       if (a2 - a1 > Math.PI) a2 -= 2 * Math.PI;
@@ -762,7 +823,7 @@ function Jiletli({ kosular, y, cap, poli }: { kosular: Kosu[]; y: number; cap: n
       }
     }
     return out;
-  }, [kosular, y, R, poli]);
+  }, [kosular, y, R, poli, parca, tumKosular]);
   return (
     <Tekrarli
       key={R}
@@ -931,19 +992,26 @@ function KameraRig({
   anahtar,
   gorunum,
   kose,
+  intro = 0,
 }: {
   boyut: number;
   anahtar: string;
   gorunum: GorunumIstegi;
   kose: { pos: Nokta3; bak: Nokta3 } | null;
+  /** değişince açılış çekimi yeniden: uzak izometrikten köşe görünümüne yavaşça yaklaşır */
+  intro?: number;
 }) {
   const { camera, controls, size } = useThree() as unknown as {
     size: { width: number; height: number };
     camera: THREE.PerspectiveCamera;
     controls: { target: THREE.Vector3; update: () => void; addEventListener: (e: string, f: () => void) => void; removeEventListener: (e: string, f: () => void) => void } | null;
   };
-  const hedef = useRef<{ pos: THREE.Vector3; bak: THREE.Vector3; fov: number } | null>(null);
+  const hedef = useRef<{ pos: THREE.Vector3; bak: THREE.Vector3; fov: number; hiz?: number } | null>(null);
   const ilk = useRef(true);
+  const uzakKonum = () => {
+    const S = Math.max(boyut, 6) * Math.max(1, 1.15 / (size.width / size.height));
+    return new THREE.Vector3(S * 1.6, S * 1.8 + 30, S * 2.4);
+  };
 
   useEffect(() => {
     // Dar (telefon) ekranda araziyi sığdırmak için geri çekil
@@ -965,10 +1033,20 @@ function KameraRig({
           ? { pos: new THREE.Vector3(...kose.pos), bak: new THREE.Vector3(...kose.bak), fov: NORMAL_FOV }
           : { pos: new THREE.Vector3(S * 0.45, S * 0.3 + 2.5, S * 0.7 + 3), bak: new THREE.Vector3(0, 0, 0), fov: NORMAL_FOV };
     if (ilk.current) {
-      camera.position.set(S * 1.6, S * 1.8 + 30, S * 2.4);
+      camera.position.copy(uzakKonum());
+      if (hedef.current) hedef.current.hiz = 1.3; // açılış: yavaş, sinematik yaklaşma
       ilk.current = false;
     }
   }, [anahtar, boyut, camera, size.width, size.height, gorunum.tur, gorunum.n]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Soru-cevaptan dönüşte açılış çekimi yeniden oynar
+  useEffect(() => {
+    if (!intro) return;
+    camera.position.copy(uzakKonum());
+    hedef.current = kose
+      ? { pos: new THREE.Vector3(...kose.pos), bak: new THREE.Vector3(...kose.bak), fov: NORMAL_FOV, hiz: 1.3 }
+      : { pos: new THREE.Vector3(boyut * 0.45, boyut * 0.3 + 2.5, boyut * 0.7 + 3), bak: new THREE.Vector3(0, 0, 0), fov: NORMAL_FOV, hiz: 1.3 };
+  }, [intro]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!controls) return;
@@ -980,13 +1058,13 @@ function KameraRig({
   useFrame((_, dt) => {
     const h = hedef.current;
     if (!h) return;
-    camera.position.lerp(h.pos, 1 - Math.exp(-dt * 2.4));
+    camera.position.lerp(h.pos, 1 - Math.exp(-dt * (h.hiz ?? 2.4)));
     if (Math.abs(camera.fov - h.fov) > 0.01) {
       camera.fov += (h.fov - camera.fov) * (1 - Math.exp(-dt * 3));
       camera.updateProjectionMatrix();
     }
     if (controls) {
-      controls.target.lerp(h.bak, 1 - Math.exp(-dt * 3));
+      controls.target.lerp(h.bak, 1 - Math.exp(-dt * (h.hiz ? h.hiz * 1.4 : 3)));
       controls.update();
     } else camera.lookAt(h.bak);
     if (camera.position.distanceTo(h.pos) < 0.03 && (!controls || controls.target.distanceTo(h.bak) < 0.03)) {
@@ -1342,9 +1420,12 @@ function Icerik({
   const kas = kasUzunlugu(t) * kvU.dy; // dikey yükselme
   const kasYatay = kasUzunlugu(t) * kvU.dx;
   const ustHatlar = useMemo(() => {
-    if (t.ekstra.ustTel !== "dikenli") return [];
-    const out: [THREE.Vector3, THREE.Vector3][] = [];
-    for (const k of sonuc.kosular) {
+    const bos = { kosu: sonuc.kosular.map(() => [] as [THREE.Vector3, THREE.Vector3][]), kose: [] as [THREE.Vector3, THREE.Vector3][] };
+    if (t.ekstra.ustTel !== "dikenli") return bos;
+    const kosuHat = bos.kosu;
+    const koseHat = bos.kose;
+    sonuc.kosular.forEach((k, ki) => {
+      const out = kosuHat[ki];
       const L = Math.hypot(k.b[0] - k.a[0], k.b[2] - k.a[2]) || 1;
       const yon: [number, number] = [(k.b[0] - k.a[0]) / L, (k.b[2] - k.a[2]) / L];
       const orta: Nokta = [(k.a[0] + k.b[0]) / 2, 0, (k.a[2] + k.b[2]) / 2];
@@ -1361,7 +1442,7 @@ function Icerik({
             new THREE.Vector3(k.b[0] + n[0] * d * yan, k.b[1] + y, k.b[2] + n[1] * d * yan),
           ]);
       }
-    }
+    });
     // Köşede tel bir kenarın kaş kolundan diğerininkine çekilir: köşe açık kalmaz
     for (const c of kosuKoseleri(sonuc.kosular, poli))
       for (let r = 0; r < t.ekstra.ustSira; r++) {
@@ -1370,24 +1451,49 @@ function Icerik({
         const y = h + (kas ? kas * f : 0.08 + 0.12 * (r + 1));
         if (d < 1e-3) continue; // kaşsız / düz kaşta teller zaten köşede buluşur
         for (const yan of t.direk.kasli && t.direk.kasTipi === "v" ? [1, -1] : [1])
-          out.push([
+          koseHat.push([
             new THREE.Vector3(c.p.x + c.n1[0] * d * yan, c.p.y + y, c.p.z + c.n1[1] * d * yan),
             new THREE.Vector3(c.p.x + c.n2[0] * d * yan, c.p.y + y, c.p.z + c.n2[1] * d * yan),
           ]);
       }
-    return out;
+    return bos;
   }, [sonuc.kosular, t.ekstra.ustTel, t.ekstra.ustSira, t.direk.kasli, t.direk.kasTipi, kas, kasYatay, h, poli]);
 
   const anaDikenli = useMemo(() => {
-    if (tip !== "dikenli") return [];
-    const out: [THREE.Vector3, THREE.Vector3][] = [];
-    for (const k of sonuc.kosular)
+    // koşu başına hatlar (açılışta her koşu köşeden serilir)
+    return sonuc.kosular.map((k) => {
+      if (tip !== "dikenli") return [] as [THREE.Vector3, THREE.Vector3][];
+      const out: [THREE.Vector3, THREE.Vector3][] = [];
       for (let r = 0; r < t.tel.sira; r++) {
         const y = 0.2 + ((h - 0.2) * r) / Math.max(1, t.tel.sira - 1);
         out.push([new THREE.Vector3(k.a[0], k.a[1] + y, k.a[2]), new THREE.Vector3(k.b[0], k.b[1] + y, k.b[2])]);
       }
-    return out;
+      return out;
+    });
   }, [tip, sonuc.kosular, t.tel.sira, h]);
+
+  // Açılış animasyonu: görünüm köşesinden (ön-sağ köşe; düz hatta ilk uç) çevre boyunca mesafe
+  const acilis = useMemo(() => {
+    let bas = 0;
+    if (kapali) noktalar.forEach((p, i) => p[0] + p[1] > noktalar[bas][0] + noktalar[bas][1] && (bas = i));
+    const { olc, enUzak } = noktalar.length >= 2 ? cevreMesafesi(noktalar as [number, number][], kapali, bas) : { olc: () => 0, enUzak: 1 };
+    const dalgaHiz = Math.max(enUzak / DUSUS.dalgaSuresi, 4);
+    return {
+      olc,
+      telHiz: Math.max(enUzak / DUSUS.telSuresi, 4),
+      telGecikme: detay ? null : DUSUS.direkGecikme + DUSUS.telGecikme,
+      direkGecikmeleri: detay ? undefined : sonuc.direkler.map((d) => DUSUS.direkGecikme + olc(d.p[0], d.p[2]) / dalgaHiz),
+    };
+  }, [noktalar, kapali, detay, sonuc.direkler]);
+  // köşede birleşen koşu çiftleri (köşe parçaları için)
+  const koseCiftleri = useMemo(() => {
+    const out: [number, number][] = [];
+    const K = sonuc.kosular;
+    for (let a = 0; a < K.length; a++)
+      for (let b = 0; b < K.length; b++)
+        if (a !== b && Math.hypot(K[a].b[0] - K[b].a[0], K[a].b[2] - K[b].a[2]) < 1e-3) out.push([a, b]);
+    return out;
+  }, [sonuc.kosular]);
 
   const gergiSira = tip === "kafes" || tip === "tavuk" ? (h >= 1.5 ? [0.06, h / 2 + 0.05, h + 0.04] : [0.06, h + 0.04]) : [];
   const S = Math.max(boyut, 6);
@@ -1496,39 +1602,63 @@ function Icerik({
         {duvarH > 0 && <BetonDuvar kosular={sonuc.kosular} h={duvarH} />}
         {/* Duvar üstü montajda çit duvarın tepesine oturur */}
         <group position={[0, duvarH > 0 ? duvarH + 0.04 : 0, 0]}>
-        <Dusen key={`t${animAnahtar}`} baslangic={baslangic} gecikme={detay ? -10 : DUSUS.direkGecikme + sonuc.direkler.length * DUSUS.direkAra + DUSUS.direkSure * 0.6}>
-        {tip === "panel" ? (
-          <PanelCit
-            kosular={sonuc.kosular}
-            aralik={t.direk.aralik}
-            h={h}
-            gozMm={t.tel.goz}
-            kalinlikMm={t.tel.kalinlik}
-            renk={pvc ? "#1d6b45" : "#c9d1db"}
-            poli={poli}
-            direkK={kesit(t.direk.olcu)}
-          />
-        ) : (
-          telMalzeme &&
-          sonuc.kosular.map((k, i) => <TelYuzeyi key={i} kosu={k} alt={0.06} h={h - 0.02} malzeme={telMalzeme} hucre={hucre} />)
-        )}
-        {gergiSira.length > 0 && <YatayTeller kosular={sonuc.kosular} yukseklikler={gergiSira} renk={pvc ? "#2f9a58" : "#aeb8c4"} />}
-        {anaDikenli.length > 0 && <DikenliTeller hatlar={anaDikenli} />}
-        {ustHatlar.length > 0 && <DikenliTeller hatlar={ustHatlar} />}
-        {t.ekstra.ustTel === "jiletli" && tip !== "dikenli" && <Jiletli kosular={sonuc.kosular} y={h + 0.08 + kas * 0.5} cap={t.ekstra.jiletliCap} poli={poli} />}
-        {t.ekstra.ustTel === "duzlemsel" && tip !== "dikenli" && (
-          <Duzlemsel
-            kosular={sonuc.kosular}
-            y={h + 0.08}
-            egik={t.direk.kasli && t.direk.kasTipi === "egik" ? kasVektoru(t) : null}
-            cap={t.ekstra.duzlemselCap}
-            direkK={kesit(t.direk.olcu)}
-            poli={poli}
-          />
-        )}
-
-        </Dusen>
-        <Direkler key={`d${animAnahtar}`} direkler={sonuc.direkler} t={t} poli={poli} baslangic={baslangic} animasyon={!detay} dubel={dubel} />
+        {sonuc.kosular.map((k, i) => (
+          <Seril key={`s${animAnahtar}-${i}`} kosu={k} olc={acilis.olc} hiz={acilis.telHiz} baslangic={baslangic} gecikme={acilis.telGecikme}>
+            {tip === "panel" ? (
+              <PanelCit
+                kosular={[k]}
+                aralik={t.direk.aralik}
+                h={h}
+                gozMm={t.tel.goz}
+                kalinlikMm={t.tel.kalinlik}
+                renk={pvc ? "#1d6b45" : "#c9d1db"}
+                poli={poli}
+                direkK={kesit(t.direk.olcu)}
+              />
+            ) : (
+              telMalzeme && <TelYuzeyi kosu={k} alt={0.06} h={h - 0.02} malzeme={telMalzeme} hucre={hucre} />
+            )}
+            {gergiSira.length > 0 && <YatayTeller kosular={[k]} yukseklikler={gergiSira} renk={pvc ? "#2f9a58" : "#aeb8c4"} />}
+            {anaDikenli[i]?.length > 0 && <DikenliTeller hatlar={anaDikenli[i]} />}
+            {ustHatlar.kosu[i]?.length > 0 && <DikenliTeller hatlar={ustHatlar.kosu[i]} />}
+            {t.ekstra.ustTel === "jiletli" && tip !== "dikenli" && <Jiletli kosular={[k]} parca="kosu" y={h + 0.08 + kas * 0.5} cap={t.ekstra.jiletliCap} poli={poli} />}
+            {t.ekstra.ustTel === "duzlemsel" && tip !== "dikenli" && (
+              <Duzlemsel
+                kosular={[k]}
+                parca="kosu"
+                y={h + 0.08}
+                egik={t.direk.kasli && t.direk.kasTipi === "egik" ? kasVektoru(t) : null}
+                cap={t.ekstra.duzlemselCap}
+                direkK={kesit(t.direk.olcu)}
+                poli={poli}
+              />
+            )}
+          </Seril>
+        ))}
+        {/* Köşe parçaları (köşede dönen jiletli halkalar, kaş kolları arası tel): serilme cephesi köşeye varınca belirir */}
+        {koseCiftleri.map(([a, b], n) => (
+          <Belir key={`k${animAnahtar}-${n}`} baslangic={baslangic} an={acilis.telGecikme === null ? null : acilis.telGecikme + acilis.olc(sonuc.kosular[a].b[0], sonuc.kosular[a].b[2]) / acilis.telHiz}>
+            {t.ekstra.ustTel === "jiletli" && tip !== "dikenli" && <Jiletli kosular={[]} tumKosular={[sonuc.kosular[a], sonuc.kosular[b]]} parca="kose" y={h + 0.08 + kas * 0.5} cap={t.ekstra.jiletliCap} poli={poli} />}
+            {t.ekstra.ustTel === "duzlemsel" && tip !== "dikenli" && (
+              <Duzlemsel
+                kosular={[]}
+                tumKosular={[sonuc.kosular[a], sonuc.kosular[b]]}
+                parca="kose"
+                y={h + 0.08}
+                egik={t.direk.kasli && t.direk.kasTipi === "egik" ? kasVektoru(t) : null}
+                cap={t.ekstra.duzlemselCap}
+                direkK={kesit(t.direk.olcu)}
+                poli={poli}
+              />
+            )}
+          </Belir>
+        ))}
+        {ustHatlar.kose.map((hat, n) => (
+          <Belir key={`h${animAnahtar}-${n}`} baslangic={baslangic} an={acilis.telGecikme === null ? null : acilis.telGecikme + acilis.olc(hat[0].x, hat[0].z) / acilis.telHiz}>
+            <DikenliTeller hatlar={[hat]} />
+          </Belir>
+        ))}
+        <Direkler key={`d${animAnahtar}`} direkler={sonuc.direkler} t={t} poli={poli} baslangic={baslangic} animasyon={!detay} dubel={dubel} gecikmeler={acilis.direkGecikmeleri} />
         </group>
         <Babalar
           babalar={sonuc.babalar ?? []}
@@ -1550,7 +1680,7 @@ function Icerik({
       {detay ? (
         <DetayKamera noktalar={noktalar} merkez={merkez} h={h} taban={duvarH} onHazir={onHazir} />
       ) : (
-        <KameraRig boyut={boyut} anahtar={`${t.sekil}-${Math.round(boyut / 5)}`} gorunum={gorunum} kose={koseGorunum} />
+        <KameraRig boyut={boyut} anahtar={`${t.sekil}-${Math.round(boyut / 5)}`} gorunum={gorunum} kose={koseGorunum} intro={animAnahtar} />
       )}
     </>
   );
