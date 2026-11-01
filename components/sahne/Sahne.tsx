@@ -121,15 +121,7 @@ function Payanda({ ust, alt, k, boru, malzeme }: { ust: THREE.Vector3; alt: THRE
  * görünüm köşesindeki direkten başlar, çit boyunca iki yana yayılır; en uzaktaki en son düşer.
  * Dalga başladıktan 2 sn sonra teller aynı köşeden rulodan serilir gibi iki yana açılır.
  */
-const DUSUS = { yukseklik: 60, direkGecikme: 0.6, direkSure: 1.15, dalgaSuresi: 2.6, telGecikme: 2, telSuresi: 3.2, telSure: 0.7 };
-/** Sekmeli iniş (0 → 1): yere çarpıp iki kez hafifçe sıçrar. */
-function sekme(x: number) {
-  const n = 7.5625, d = 2.75;
-  if (x < 1 / d) return n * x * x;
-  if (x < 2 / d) return n * (x -= 1.5 / d) * x + 0.75;
-  if (x < 2.5 / d) return n * (x -= 2.25 / d) * x + 0.9375;
-  return n * (x -= 2.625 / d) * x + 0.984375;
-}
+const DUSUS = { yukseklik: 60, direkGecikme: 0.6, direkSure: 1.15, dalgaSuresi: 2.9, telGecikme: 2, telSuresi: 3.2, telSure: 0.7 };
 /**
  * Çit boyunca (çevre üzerinden) görünüm köşesine uzaklık: düşme dalgası ve tel serilmesi bununla
  * sıralanır. Kapalı arazide iki yönden kısa olan alınır.
@@ -357,7 +349,7 @@ function Direkler({
   const geoGuclu = useMemo(() => govde(guclu), [boru, betonDirek, guclu, h]); // eslint-disable-line react-hooks/exhaustive-deps
   useAt(malzeme, geoAra, geoGuclu);
 
-  // Açılışta direkler sırayla tepeden düşüp zemine oturur (hafif sekme)
+  // Açılışta direkler sırayla tepeden düşüp zemine saplanır (zıplamadan)
   const refler = useRef<(THREE.Group | null)[]>([]);
   const bitti = useRef(!animasyon);
   useFrame(() => {
@@ -368,7 +360,7 @@ function Direkler({
       if (!g) return;
       const k = THREE.MathUtils.clamp((s - (gecikmeler?.[i] ?? DUSUS.direkGecikme)) / DUSUS.direkSure, 0, 1);
       if (k < 1) hepsi = false;
-      g.position.y = (1 - sekme(k)) * DUSUS.yukseklik;
+      g.position.y = (1 - k * k) * DUSUS.yukseklik; // serbest düşüş: hızlanarak iner, zıplamadan saplanır
       g.visible = k > 0; // düşmeye başlamayan direk gökyüzünde görünmesin
     });
     if (hepsi) bitti.current = true;
@@ -1477,7 +1469,7 @@ function Icerik({
     let bas = 0;
     if (kapali) noktalar.forEach((p, i) => p[0] + p[1] > noktalar[bas][0] + noktalar[bas][1] && (bas = i));
     const { olc, enUzak } = noktalar.length >= 2 ? cevreMesafesi(noktalar as [number, number][], kapali, bas) : { olc: () => 0, enUzak: 1 };
-    const dalgaHiz = Math.max(enUzak / DUSUS.dalgaSuresi, 4);
+    const dalgaHiz = Math.max(enUzak / DUSUS.dalgaSuresi, 3.6); // dalga ~%10 yavaşlatıldı
     return {
       olc,
       telHiz: Math.max(enUzak / DUSUS.telSuresi, 4),
