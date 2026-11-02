@@ -9,7 +9,7 @@ ilgili bölümü bul, yalnızca o dosyaları aç.
 |---|---|
 | Çit tasarımı + teklif durumu | `app/cit/page.tsx`, `components/Tasarimci.tsx`, `FiyatOzeti`, `MusteriFormu`, `MusteriSor`, `SatisciSec`, `TeklifDetay`, `TeklifPenceresi`, `TeklifYazdir`, `YeniTeklif`; `lib/tasarim.ts`, `store.ts`, `ayarlar.ts`, `birlestir.ts`, `detay.ts`, `plan.ts`, `sayi.ts`, `teklifKaydi.ts`, `telefon.ts` |
 | Hesap + teknik resim | `lib/hesap.ts`, `components/citTeknik.ts` |
-| 3D çit sahnesi | `components/sahne/Sahne.tsx`, `sahne/dokular.ts`, `lib/geometri.ts` |
+| 3D çit sahnesi | `components/sahne/Sahne.tsx`, `sahne/dokular.ts`, `lib/geometri.ts`; eğlence: `sahne/Tavuklar.tsx` (bloklu tavuklar, "Tavuk ekle" butonu) |
 | Çizim alanı + uydu harita | `components/form/CizimAlani.tsx`, `components/UyduHarita.tsx`, `lib/harita.ts`, `lib/serbest.ts` |
 | Soru-cevap + ayarlar | `components/SoruCevap.tsx`, `AyarPaneli.tsx`, `ikonlar.tsx` |
 | Kapı planlayıcı + üretim | `app/kapi/page.tsx`, `app/arac/page.tsx`, `components/KapiPlanlayici.tsx`, `KapiSoruCevap`, `UretimPenceresi`, `form/Adimlar.tsx`, `kapiTeknik.ts`, `ui.tsx`; `lib/kapiYapi.ts`, `uretim.ts` |

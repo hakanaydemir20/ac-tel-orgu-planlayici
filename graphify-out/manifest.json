@@ -198,10 +198,10 @@
     "semantic_hash": "03b569912632dffaa17a94653bacf6cd"
   },
   "components/sahne/Sahne.tsx": {
-    "mtime": 1793567849.1238234,
-    "seen": 1793568048.625143,
-    "ast_hash": "26a54433dbf3fd27b66a5702fd372a50",
-    "semantic_hash": "26a54433dbf3fd27b66a5702fd372a50"
+    "mtime": 1793569068.710168,
+    "seen": 1793597757.8857741,
+    "ast_hash": "7b50a94b696465dbb8101668cc0e01f9",
+    "semantic_hash": ""
   },
   "components/sahne/dokular.ts": {
     "mtime": 1793567849.1239643,
@@ -442,5 +442,35 @@
     "seen": 1793568048.6252,
     "ast_hash": "7a84dbd8eca253acf588dceef982357b",
     "semantic_hash": "7a84dbd8eca253acf588dceef982357b"
+  },
+  "components/sahne/Tavuklar.tsx": {
+    "mtime": 1793569053.4628034,
+    "seen": 1793597757.8857758,
+    "ast_hash": "4e956d656a46c5442d6b22d567ce38a6",
+    "semantic_hash": ""
+  },
+  "CLAUDE.md": {
+    "mtime": 1793597010.797197,
+    "seen": 1793597757.88584,
+    "ast_hash": "ca4e0a593f048316f122d5169ace524f",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1793567849.1151433,
+    "seen": 1793597757.885841,
+    "ast_hash": "577a4f8de4a0a0513d0eb6cf6fb3650d",
+    "semantic_hash": ""
+  },
+  "public/logo.png": {
+    "mtime": 1793567849.1310313,
+    "seen": 1793597757.885843,
+    "ast_hash": "25808fa20fbb3cdf9701013f7d70c170",
+    "semantic_hash": ""
+  },
+  "package-lock.json": {
+    "mtime": 1793567849.130566,
+    "seen": 1793597757.885845,
+    "ast_hash": "de87c46b15b208c3bf55fd473e58b2d6",
+    "semantic_hash": ""
   }
 }

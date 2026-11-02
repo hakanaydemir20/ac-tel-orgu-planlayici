@@ -14,6 +14,7 @@ import { sayiOku } from "@/lib/sayi";
 import { varlik } from "@/lib/yol";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { betonDokusu, hucreBoyu, telDokusu } from "./dokular";
+import { Tavuklar } from "./Tavuklar";
 
 // ---------- yardımcılar ----------
 
@@ -1334,7 +1335,9 @@ function Icerik({
   gorunum = { tur: "kose", n: 0 },
   onNoktaTasi,
   animasyonAnahtari: animAnahtar = 0,
+  tavukSayisi = 0,
 }: SahneProps & {
+  tavukSayisi?: number;
   etiketBildir?: (e: EtiketVeri[]) => void;
   etiketDom?: React.RefObject<Map<number, HTMLElement>>;
   gorunum?: GorunumIstegi;
@@ -1665,7 +1668,7 @@ function Icerik({
           telMalzeme={kapiMalzeme}
           babaYari={sonuc.babalar?.length ? { yaya: kesit(VARSAYILAN_AYARLAR.kapiBabasi.yayaOlcu) / 2, arac: kesit(VARSAYILAN_AYARLAR.kapiBabasi.aracOlcu) / 2 } : undefined}
         />
-
+        {!detay && tavukSayisi > 0 && <Tavuklar sayi={tavukSayisi} poli={kapali ? noktalar : null} kutuNoktalari={noktalar} zeminY={minY - 0.03} />}
       </group>
 
       {!detay && etiketDom && <EtiketYansit etiketler={etiketler} domlar={etiketDom} />}
@@ -1684,6 +1687,7 @@ export default function Sahne(props: SahneProps) {
   const [gorunum, setGorunum] = useState<GorunumIstegi>({ tur: "kose", n: 0 });
   const gorunumSec = (tur: GorunumTuru, yon?: Nokta3) => setGorunum((g) => ({ tur, yon, n: g.n + 1 }));
   const domlar = useRef(new Map<number, HTMLElement>());
+  const [tavuk, setTavuk] = useState(0);
   return (
     <div className="relative h-full w-full">
       <Canvas
@@ -1696,7 +1700,7 @@ export default function Sahne(props: SahneProps) {
           gl.toneMapping = THREE.ACESFilmicToneMapping;
         }}
       >
-        <Icerik {...props} etiketBildir={detay ? undefined : setEtiketler} etiketDom={domlar} gorunum={gorunum} />
+        <Icerik {...props} etiketBildir={detay ? undefined : setEtiketler} etiketDom={domlar} gorunum={gorunum} tavukSayisi={tavuk} />
         <OrbitControls makeDefault enableDamping enabled={!detay} maxPolarAngle={Math.PI / 2.05} minDistance={1} maxDistance={3000} />
         {/* Görünüm küpü: yüzüne tıklayınca kamera o yöne döner */}
         {!detay && (
@@ -1720,6 +1724,23 @@ export default function Sahne(props: SahneProps) {
           </GizmoHelper>
         )}
       </Canvas>
+      {!detay && (
+        <div className="absolute right-2 top-14 z-30 flex items-center gap-1 sm:right-3 sm:top-3">
+          <button
+            type="button"
+            title="Alana bir tavuk ekle (eğlence)"
+            onClick={() => setTavuk((n) => Math.min(n + 1, 60))}
+            className="cam rounded-lg px-2.5 py-1.5 text-xs font-bold transition hover:bg-[var(--yuzey-2)]"
+          >
+            🐔 Tavuk ekle{tavuk ? ` · ${tavuk}` : ""}
+          </button>
+          {tavuk > 0 && (
+            <button type="button" title="Tavukları kaldır" aria-label="Tavukları kaldır" onClick={() => setTavuk(0)} className="cam rounded-lg px-2 py-1.5 text-xs font-bold transition hover:bg-[var(--yuzey-2)]">
+              ✕
+            </button>
+          )}
+        </div>
+      )}
       {!detay && (
         <div className="absolute bottom-3 left-3 z-20 flex flex-col gap-1.5">
           {(
