@@ -14,7 +14,7 @@ import { sayiOku } from "@/lib/sayi";
 import { varlik } from "@/lib/yol";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { betonDokusu, hucreBoyu, telDokusu } from "./dokular";
-import { Tavuklar } from "./Tavuklar";
+import { Hayvanlar, type HayvanSayilari } from "./Hayvanlar";
 
 // ---------- yardımcılar ----------
 
@@ -1335,9 +1335,9 @@ function Icerik({
   gorunum = { tur: "kose", n: 0 },
   onNoktaTasi,
   animasyonAnahtari: animAnahtar = 0,
-  tavukSayisi = 0,
+  hayvanlar,
 }: SahneProps & {
-  tavukSayisi?: number;
+  hayvanlar?: HayvanSayilari;
   etiketBildir?: (e: EtiketVeri[]) => void;
   etiketDom?: React.RefObject<Map<number, HTMLElement>>;
   gorunum?: GorunumIstegi;
@@ -1668,7 +1668,7 @@ function Icerik({
           telMalzeme={kapiMalzeme}
           babaYari={sonuc.babalar?.length ? { yaya: kesit(VARSAYILAN_AYARLAR.kapiBabasi.yayaOlcu) / 2, arac: kesit(VARSAYILAN_AYARLAR.kapiBabasi.aracOlcu) / 2 } : undefined}
         />
-        {!detay && tavukSayisi > 0 && <Tavuklar sayi={tavukSayisi} poli={kapali ? noktalar : null} kutuNoktalari={noktalar} zeminY={minY - 0.03} />}
+        {!detay && hayvanlar && <Hayvanlar sayilar={hayvanlar} poli={kapali ? noktalar : null} kutuNoktalari={noktalar} zeminY={minY - 0.03} />}
       </group>
 
       {!detay && etiketDom && <EtiketYansit etiketler={etiketler} domlar={etiketDom} />}
@@ -1687,7 +1687,8 @@ export default function Sahne(props: SahneProps) {
   const [gorunum, setGorunum] = useState<GorunumIstegi>({ tur: "kose", n: 0 });
   const gorunumSec = (tur: GorunumTuru, yon?: Nokta3) => setGorunum((g) => ({ tur, yon, n: g.n + 1 }));
   const domlar = useRef(new Map<number, HTMLElement>());
-  const [tavuk, setTavuk] = useState(0);
+  const [hayvan, setHayvan] = useState<HayvanSayilari>({ tavuk: 0, kus: 0, kopek: 0 });
+  const hayvanVar = hayvan.tavuk + hayvan.kus + hayvan.kopek > 0;
   return (
     <div className="relative h-full w-full">
       <Canvas
@@ -1700,7 +1701,7 @@ export default function Sahne(props: SahneProps) {
           gl.toneMapping = THREE.ACESFilmicToneMapping;
         }}
       >
-        <Icerik {...props} etiketBildir={detay ? undefined : setEtiketler} etiketDom={domlar} gorunum={gorunum} tavukSayisi={tavuk} />
+        <Icerik {...props} etiketBildir={detay ? undefined : setEtiketler} etiketDom={domlar} gorunum={gorunum} hayvanlar={hayvan} />
         <OrbitControls makeDefault enableDamping enabled={!detay} maxPolarAngle={Math.PI / 2.05} minDistance={1} maxDistance={3000} />
         {/* Görünüm küpü: yüzüne tıklayınca kamera o yöne döner */}
         {!detay && (
@@ -1726,16 +1727,26 @@ export default function Sahne(props: SahneProps) {
       </Canvas>
       {!detay && (
         <div className="absolute right-2 top-14 z-30 flex items-center gap-1 sm:right-3 sm:top-3">
-          <button
-            type="button"
-            title="Alana bir tavuk ekle (eğlence)"
-            onClick={() => setTavuk((n) => Math.min(n + 1, 60))}
-            className="cam rounded-lg px-2.5 py-1.5 text-xs font-bold transition hover:bg-[var(--yuzey-2)]"
-          >
-            🐔 Tavuk ekle{tavuk ? ` · ${tavuk}` : ""}
-          </button>
-          {tavuk > 0 && (
-            <button type="button" title="Tavukları kaldır" aria-label="Tavukları kaldır" onClick={() => setTavuk(0)} className="cam rounded-lg px-2 py-1.5 text-xs font-bold transition hover:bg-[var(--yuzey-2)]">
+          {(
+            [
+              ["tavuk", "🐔", "Tavuk", 60],
+              ["kus", "🐦", "Kuş", 30],
+              ["kopek", "🐕", "Köpek", 6],
+            ] as const
+          ).map(([tur, ikon, ad, ust]) => (
+            <button
+              key={tur}
+              type="button"
+              title={`Alana ${ad.toLocaleLowerCase("tr")} ekle (eğlence)`}
+              onClick={() => setHayvan((h) => ({ ...h, [tur]: Math.min(h[tur] + 1, ust) }))}
+              className="cam rounded-lg px-2 py-1.5 text-xs font-bold transition hover:bg-[var(--yuzey-2)]"
+            >
+              {ikon} <span className="hidden sm:inline">{ad}</span>
+              {hayvan[tur] ? ` ${hayvan[tur]}` : ""}
+            </button>
+          ))}
+          {hayvanVar && (
+            <button type="button" title="Hayvanları kaldır" aria-label="Hayvanları kaldır" onClick={() => setHayvan({ tavuk: 0, kus: 0, kopek: 0 })} className="cam rounded-lg px-2 py-1.5 text-xs font-bold transition hover:bg-[var(--yuzey-2)]">
               ✕
             </button>
           )}

@@ -198,9 +198,9 @@
     "semantic_hash": "03b569912632dffaa17a94653bacf6cd"
   },
   "components/sahne/Sahne.tsx": {
-    "mtime": 1793569068.710168,
-    "seen": 1793597757.8857741,
-    "ast_hash": "7b50a94b696465dbb8101668cc0e01f9",
+    "mtime": 1793869068.5195656,
+    "seen": 1793869168.105717,
+    "ast_hash": "e372a8bb319cc35cb53b69a69e77bb0d",
     "semantic_hash": ""
   },
   "components/sahne/dokular.ts": {
@@ -443,16 +443,10 @@
     "ast_hash": "7a84dbd8eca253acf588dceef982357b",
     "semantic_hash": "7a84dbd8eca253acf588dceef982357b"
   },
-  "components/sahne/Tavuklar.tsx": {
-    "mtime": 1793569053.4628034,
-    "seen": 1793597757.8857758,
-    "ast_hash": "4e956d656a46c5442d6b22d567ce38a6",
-    "semantic_hash": ""
-  },
   "CLAUDE.md": {
-    "mtime": 1793597010.797197,
-    "seen": 1793597757.88584,
-    "ast_hash": "ca4e0a593f048316f122d5169ace524f",
+    "mtime": 1793869163.4965312,
+    "seen": 1793869168.105783,
+    "ast_hash": "2fd32bfd40b731be3bd73bddf9a1d82c",
     "semantic_hash": ""
   },
   "README.md": {
@@ -471,6 +465,12 @@
     "mtime": 1793567849.130566,
     "seen": 1793597757.885845,
     "ast_hash": "de87c46b15b208c3bf55fd473e58b2d6",
+    "semantic_hash": ""
+  },
+  "components/sahne/Hayvanlar.tsx": {
+    "mtime": 1793869068.5197468,
+    "seen": 1793869168.105715,
+    "ast_hash": "c83d72ab132f026cb51c457c925d1228",
     "semantic_hash": ""
   }
 }
