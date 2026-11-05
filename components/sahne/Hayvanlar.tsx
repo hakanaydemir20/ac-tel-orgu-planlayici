@@ -1,19 +1,23 @@
 "use client";
 // Eğlence için: çit alanında yaşayan bloklu (voksel) hayvanlar — tavuk (yumurtlar, yumurtadan civciv
 // çıkar, civciv büyüyüp tavuk olur), kuş (uçar, konar) ve köpek (tavukları kovalar). Her hayvan birkaç
-// kutudan oluşur; geometri ve malzemeler ortaktır, hareketler kemik döndürmeyle yapılır.
+// kutudan oluşur; inek ve koyun otlar, köpek koyunları da kovalar; geometri ve malzemeler ortaktır, hareketler kemik döndürmeyle yapılır.
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { icinde } from "@/lib/geometri";
 
 type Nokta2 = [number, number];
-type Tur = "tavuk" | "civciv" | "kus" | "kopek";
+type Tur = "tavuk" | "civciv" | "kus" | "kopek" | "inek" | "koyun";
+const DORT_AYAK = new Set<Tur>(["kopek", "inek", "koyun"]);
+const GOVDE_Y: Partial<Record<Tur, number>> = { kopek: 0.37, inek: 0.62, koyun: 0.44 };
 type Durum = "yuru" | "gagala" | "bekle" | "kanat" | "zipla" | "otur" | "kovala" | "kac" | "uc" | "in";
 export interface HayvanSayilari {
   tavuk: number;
   kus: number;
   kopek: number;
+  inek: number;
+  koyun: number;
 }
 
 const K = 1.4; // ölçek (tavuk ≈ 0,6 m)
@@ -126,18 +130,80 @@ function KopekModel({ k }: { k: Kemik }) {
           <Kutu o={[0.06, 0.06, 0.26]} r="#8a6142" p={[0, 0, -0.13]} />
         </group>
       </group>
+      <Bacaklar k={k} x={0.1} z={0.22} y={0.27} o={[0.09, 0.27, 0.09]} r={ten} />
+    </group>
+  );
+}
+
+/** Dört bacak: ön/arka, sol/sağ; her biri kalçadan döner. */
+function Bacaklar({ k, x, z, y, o, r }: { k: Kemik; x: number; z: number; y: number; o: [number, number, number]; r: string }) {
+  return (
+    <>
       {(
         [
-          ["bacakOL", 0.1, 0.22],
-          ["bacakOR", -0.1, 0.22],
-          ["bacakAL", 0.1, -0.22],
-          ["bacakAR", -0.1, -0.22],
+          ["bacakOL", x, z],
+          ["bacakOR", -x, z],
+          ["bacakAL", x, -z],
+          ["bacakAR", -x, -z],
         ] as const
-      ).map(([ad, x, z]) => (
-        <group key={ad} ref={bag(k, ad)} position={P(x, 0.27, z)}>
-          <Kutu o={[0.09, 0.27, 0.09]} r={ten} p={[0, -0.135, 0]} />
+      ).map(([ad, bx, bz]) => (
+        <group key={ad} ref={bag(k, ad)} position={P(bx, y, bz)}>
+          <Kutu o={o} r={r} p={[0, -o[1] / 2, 0]} />
         </group>
       ))}
+    </>
+  );
+}
+
+/** Siyah-beyaz alaca inek. */
+function InekModel({ k }: { k: Kemik }) {
+  const [ak, kara, pembe] = ["#f1efe9", "#2a2a2a", "#e9a6a6"];
+  return (
+    <group ref={bag(k, "kok")}>
+      <group ref={bag(k, "govde")} position={P(0, 0.62, 0)}>
+        <Kutu o={[0.5, 0.48, 0.9]} r={ak} p={[0, 0, 0]} />
+        <Kutu o={[0.52, 0.3, 0.3]} r={kara} p={[0, 0.08, 0.12]} />
+        <Kutu o={[0.52, 0.22, 0.2]} r={kara} p={[0, -0.04, -0.28]} />
+        <Kutu o={[0.2, 0.08, 0.24]} r={pembe} p={[0, -0.27, -0.2]} />
+        <group ref={bag(k, "kafa")} position={P(0, 0.12, 0.45)}>
+          <Kutu o={[0.38, 0.36, 0.3]} r={ak} p={[0, 0.04, 0.12]} />
+          <Kutu o={[0.38, 0.16, 0.12]} r={kara} p={[0, 0.16, 0.12]} />
+          <Kutu o={[0.28, 0.16, 0.08]} r={pembe} p={[0, -0.06, 0.3]} />
+          <Kutu o={[0.06, 0.12, 0.06]} r="#e8dcc0" p={[0.17, 0.27, 0.08]} />
+          <Kutu o={[0.06, 0.12, 0.06]} r="#e8dcc0" p={[-0.17, 0.27, 0.08]} />
+          <Kutu o={[0.03, 0.05, 0.02]} r="#111" p={[0.12, 0.08, 0.27]} />
+          <Kutu o={[0.03, 0.05, 0.02]} r="#111" p={[-0.12, 0.08, 0.27]} />
+        </group>
+        <group ref={bag(k, "kuyruk")} position={P(0, 0.2, -0.45)}>
+          <Kutu o={[0.04, 0.42, 0.04]} r={ak} p={[0, -0.21, -0.02]} />
+          <Kutu o={[0.07, 0.08, 0.07]} r={kara} p={[0, -0.42, -0.02]} />
+        </group>
+      </group>
+      <Bacaklar k={k} x={0.16} z={0.32} y={0.42} o={[0.14, 0.42, 0.14]} r={ak} />
+    </group>
+  );
+}
+
+/** Yünlü koyun. */
+function KoyunModel({ k }: { k: Kemik }) {
+  const [yun, ten] = ["#ece8e0", "#d9c7b0"];
+  return (
+    <group ref={bag(k, "kok")}>
+      <group ref={bag(k, "govde")} position={P(0, 0.44, 0)}>
+        <Kutu o={[0.44, 0.4, 0.66]} r={yun} p={[0, 0, 0]} />
+        <group ref={bag(k, "kafa")} position={P(0, 0.1, 0.33)}>
+          <Kutu o={[0.24, 0.26, 0.24]} r={ten} p={[0, 0, 0.1]} />
+          <Kutu o={[0.28, 0.1, 0.2]} r={yun} p={[0, 0.15, 0.06]} />
+          <Kutu o={[0.1, 0.05, 0.08]} r={ten} p={[0.15, 0.04, 0.04]} />
+          <Kutu o={[0.1, 0.05, 0.08]} r={ten} p={[-0.15, 0.04, 0.04]} />
+          <Kutu o={[0.03, 0.04, 0.02]} r="#111" p={[0.07, 0.04, 0.22]} />
+          <Kutu o={[0.03, 0.04, 0.02]} r="#111" p={[-0.07, 0.04, 0.22]} />
+        </group>
+        <group ref={bag(k, "kuyruk")} position={P(0, 0.08, -0.33)}>
+          <Kutu o={[0.1, 0.12, 0.06]} r={yun} p={[0, -0.04, -0.03]} />
+        </group>
+      </group>
+      <Bacaklar k={k} x={0.13} z={0.22} y={0.3} o={[0.1, 0.3, 0.1]} r={ten} />
     </group>
   );
 }
@@ -173,6 +239,8 @@ const AGIRLIK: Record<Tur, [Durum, number][]> = {
   civciv: [["yuru", 35], ["gagala", 25], ["bekle", 15], ["zipla", 15], ["otur", 6]],
   kopek: [["yuru", 30], ["kovala", 22], ["otur", 15], ["bekle", 15], ["zipla", 8]],
   kus: [["uc", 40], ["gagala", 25], ["zipla", 15], ["bekle", 15]],
+  inek: [["yuru", 25], ["gagala", 40], ["bekle", 20], ["otur", 15]],
+  koyun: [["yuru", 25], ["gagala", 35], ["bekle", 15], ["zipla", 10], ["otur", 15]],
 };
 const SURE: Record<Durum, [number, number]> = {
   yuru: [2, 5], gagala: [1.5, 4], bekle: [1, 3], kanat: [0.8, 1.6], zipla: [1, 2.2], otur: [4, 9], kovala: [2, 4], kac: [2, 2.5], uc: [4, 9], in: [99, 99],
@@ -182,8 +250,10 @@ const HIZ: Record<Tur, { yuru: number; kovala: number; kac: number }> = {
   civciv: { yuru: 0.45, kovala: 0, kac: 1.1 },
   kopek: { yuru: 1.0, kovala: 2.6, kac: 0 },
   kus: { yuru: 0.3, kovala: 0, kac: 0 },
+  inek: { yuru: 0.45, kovala: 0, kac: 1.2 },
+  koyun: { yuru: 0.5, kovala: 0, kac: 1.6 },
 };
-const YARICAP: Record<Tur, number> = { tavuk: 0.32, civciv: 0.16, kopek: 0.55, kus: 0.15 };
+const YARICAP: Record<Tur, number> = { tavuk: 0.32, civciv: 0.16, kopek: 0.55, kus: 0.15, inek: 0.75, koyun: 0.45 };
 function rastgeleDurum(tur: Tur): Durum {
   const l = AGIRLIK[tur];
   let r = Math.random() * l.reduce((t, [, a]) => t + a, 0);
@@ -219,19 +289,19 @@ export function Hayvanlar({ sayilar, poli, kutuNoktalari, zeminY }: { sayilar: H
   const [, yenile] = useState(0);
   const hayvanlar = useRef<Hayvan[]>([]);
   const yumurtalar = useRef<Yumurta[]>([]);
-  const eklenen = useRef<HayvanSayilari>({ tavuk: 0, kus: 0, kopek: 0 });
+  const eklenen = useRef<HayvanSayilari>({ tavuk: 0, kus: 0, kopek: 0, inek: 0, koyun: 0 });
   const sonId = useRef(0);
 
   const yeni = (tur: Tur, x: number, z: number, y: number): Hayvan => ({
     id: ++sonId.current, tur, x, z, y, vy: 0, yon: ara(0, Math.PI * 2), durum: tur === "kus" ? "uc" : "bekle", sure: ara(0.5, 1.5),
     hedef: [x, z], hy: ara(3, 6), av: -1, faz: ara(0, 10), otur: 0, yas: 0, yumurta: ara(15, 35), k: {},
   });
-  if (!sayilar.tavuk && !sayilar.kus && !sayilar.kopek && hayvanlar.current.length) {
+  if (!Object.values(sayilar).some(Boolean) && hayvanlar.current.length) {
     hayvanlar.current = [];
     yumurtalar.current = [];
-    eklenen.current = { tavuk: 0, kus: 0, kopek: 0 };
+    eklenen.current = { tavuk: 0, kus: 0, kopek: 0, inek: 0, koyun: 0 };
   }
-  for (const tur of ["tavuk", "kus", "kopek"] as const)
+  for (const tur of ["tavuk", "kus", "kopek", "inek", "koyun"] as const)
     while (eklenen.current[tur] < sayilar[tur]) {
       eklenen.current[tur]++;
       const [x, z] = tur === "kus" ? alan.hava() : alan.nokta();
@@ -279,7 +349,7 @@ export function Hayvanlar({ sayilar, poli, kutuNoktalari, zeminY }: { sayilar: H
         }
       }
       // köpek yaklaşınca tavuk/civciv kaçar, kuş havalanır
-      if (s.tur !== "kopek" && s.durum !== "kac" && !ucuyor)
+      if (s.tur !== "kopek" && s.tur !== "inek" && s.durum !== "kac" && !ucuyor)
         liste.forEach((o, j) => {
           if (o.tur !== "kopek" || Math.hypot(o.x - s.x, o.z - s.z) > 1.4 || (o.durum !== "yuru" && o.durum !== "kovala")) return;
           if (kus) (s.durum = "uc"), (s.hedef = alan.hava()), (s.hy = ara(3, 6)), (s.sure = ara(4, 8));
@@ -293,7 +363,7 @@ export function Hayvanlar({ sayilar, poli, kutuNoktalari, zeminY }: { sayilar: H
         if (s.durum === "yuru") s.hedef = alan.nokta();
         if (s.durum === "uc") (s.hedef = alan.hava()), (s.hy = ara(3, 6));
         if (s.durum === "kovala") {
-          const adaylar = liste.map((o, j) => j).filter((j) => j !== i && (s.tur === "kopek" ? liste[j].tur !== "kopek" && !(liste[j].tur === "kus" && liste[j].y > 0.1) : liste[j].tur === "tavuk"));
+          const adaylar = liste.map((o, j) => j).filter((j) => j !== i && (s.tur === "kopek" ? liste[j].tur !== "kopek" && liste[j].tur !== "inek" && !(liste[j].tur === "kus" && liste[j].y > 0.1) : liste[j].tur === "tavuk"));
           s.av = adaylar.length ? adaylar[Math.floor(Math.random() * adaylar.length)] : -1;
           if (s.av < 0) (s.durum = "yuru"), (s.hedef = alan.nokta());
           else {
@@ -366,16 +436,22 @@ export function Hayvanlar({ sayilar, poli, kutuNoktalari, zeminY }: { sayilar: H
       const adim = hiz && !ucuyor ? Math.sin(t * (hiz > 1.2 ? 22 : 13)) : 0;
       k.kok.position.set(s.x, zeminY + s.y, s.z);
       k.kok.rotation.y = s.yon;
-      if (s.tur === "kopek") {
-        k.govde.position.y = (0.37 - 0.08 * s.otur) * K + Math.abs(adim) * 0.02 * K;
-        k.govde.rotation.x = -0.45 * s.otur;
-        k.bacakOL.rotation.x = k.bacakAR.rotation.x = adim * 0.6;
-        k.bacakOR.rotation.x = -adim * 0.6;
-        k.bacakAL.rotation.x = -adim * 0.6 + 1.2 * s.otur;
-        k.bacakAR.rotation.x += 1.2 * s.otur;
-        k.kuyruk.rotation.y = Math.sin(t * (s.durum === "kovala" ? 20 : 9)) * 0.6;
-        k.kafa.rotation.x = s.durum === "bekle" ? Math.max(0, Math.sin(t * 14)) * 0.18 * (Math.sin(t * 1.3) > 0.3 ? 1 : 0) : s.durum === "kovala" ? 0.2 : 0;
-        k.kafa.rotation.y = s.durum === "otur" ? Math.sin(t * 1.2) * 0.4 : 0;
+      if (DORT_AYAK.has(s.tur)) {
+        const kopek = s.tur === "kopek";
+        const gy = GOVDE_Y[s.tur]!;
+        // köpek arkası üstüne oturur; inek ve koyun karnının üstüne yatar
+        k.govde.position.y = (kopek ? gy - 0.08 * s.otur : gy * (1 - 0.55 * s.otur)) * K + Math.abs(adim) * 0.02 * K;
+        k.govde.rotation.x = kopek ? -0.45 * s.otur : 0;
+        const a = adim * (kopek ? 0.6 : 0.45);
+        k.bacakOL.rotation.x = k.bacakAR.rotation.x = a;
+        k.bacakOR.rotation.x = k.bacakAL.rotation.x = -a;
+        if (kopek) (k.bacakAL.rotation.x += 1.2 * s.otur), (k.bacakAR.rotation.x += 1.2 * s.otur);
+        else k.bacakOL.visible = k.bacakOR.visible = k.bacakAL.visible = k.bacakAR.visible = s.otur < 0.6;
+        if (kopek) k.kuyruk.rotation.y = Math.sin(t * (s.durum === "kovala" ? 20 : 9)) * 0.6;
+        else k.kuyruk.rotation.z = Math.sin(t * 2.3) * 0.25;
+        if (s.durum === "gagala") k.kafa.rotation.set(kopek ? 0.6 : 0.85 + Math.sin(t * 5) * 0.08, Math.sin(t * 0.8) * 0.15, 0);
+        else if (kopek) k.kafa.rotation.set(s.durum === "bekle" ? Math.max(0, Math.sin(t * 14)) * 0.18 * (Math.sin(t * 1.3) > 0.3 ? 1 : 0) : s.durum === "kovala" ? 0.2 : 0, s.durum === "otur" ? Math.sin(t * 1.2) * 0.4 : 0, 0);
+        else k.kafa.rotation.set(0, s.durum === "bekle" || s.otur > 0.5 ? Math.sin(t * 0.9) * 0.4 : 0, 0);
         return;
       }
       if (s.tur === "civciv") k.olcek.scale.setScalar(0.45 + 0.55 * Math.min(1, s.yas / BUYUME));
@@ -405,7 +481,7 @@ export function Hayvanlar({ sayilar, poli, kutuNoktalari, zeminY }: { sayilar: H
   return (
     <>
       {hayvanlar.current.map((h) =>
-        h.tur === "kopek" ? <KopekModel key={h.id} k={h.k} /> : h.tur === "kus" ? <KusModel key={h.id} k={h.k} /> : <TavukModel key={`${h.id}-${h.tur}`} k={h.k} civciv={h.tur === "civciv"} />,
+        h.tur === "kopek" ? <KopekModel key={h.id} k={h.k} /> : h.tur === "inek" ? <InekModel key={h.id} k={h.k} /> : h.tur === "koyun" ? <KoyunModel key={h.id} k={h.k} /> : h.tur === "kus" ? <KusModel key={h.id} k={h.k} /> : <TavukModel key={`${h.id}-${h.tur}`} k={h.k} civciv={h.tur === "civciv"} />,
       )}
       {yumurtalar.current.map((y) => (
         <YumurtaModel key={y.id} y={y} zeminY={zeminY} />

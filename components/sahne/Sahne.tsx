@@ -1687,8 +1687,8 @@ export default function Sahne(props: SahneProps) {
   const [gorunum, setGorunum] = useState<GorunumIstegi>({ tur: "kose", n: 0 });
   const gorunumSec = (tur: GorunumTuru, yon?: Nokta3) => setGorunum((g) => ({ tur, yon, n: g.n + 1 }));
   const domlar = useRef(new Map<number, HTMLElement>());
-  const [hayvan, setHayvan] = useState<HayvanSayilari>({ tavuk: 0, kus: 0, kopek: 0 });
-  const hayvanVar = hayvan.tavuk + hayvan.kus + hayvan.kopek > 0;
+  const [hayvan, setHayvan] = useState<HayvanSayilari>({ tavuk: 0, kus: 0, kopek: 0, inek: 0, koyun: 0 });
+  const hayvanVar = Object.values(hayvan).some(Boolean);
   return (
     <div className="relative h-full w-full">
       <Canvas
@@ -1726,12 +1726,14 @@ export default function Sahne(props: SahneProps) {
         )}
       </Canvas>
       {!detay && (
-        <div className="absolute right-2 top-14 z-30 flex items-center gap-1 sm:right-3 sm:top-3">
+        <div className="absolute right-2 top-[6.5rem] z-30 flex flex-wrap justify-end items-center gap-1 sm:right-3">
           {(
             [
               ["tavuk", "🐔", "Tavuk", 60],
               ["kus", "🐦", "Kuş", 30],
               ["kopek", "🐕", "Köpek", 6],
+              ["inek", "🐄", "İnek", 10],
+              ["koyun", "🐑", "Koyun", 20],
             ] as const
           ).map(([tur, ikon, ad, ust]) => (
             <button
@@ -1746,7 +1748,7 @@ export default function Sahne(props: SahneProps) {
             </button>
           ))}
           {hayvanVar && (
-            <button type="button" title="Hayvanları kaldır" aria-label="Hayvanları kaldır" onClick={() => setHayvan({ tavuk: 0, kus: 0, kopek: 0 })} className="cam rounded-lg px-2 py-1.5 text-xs font-bold transition hover:bg-[var(--yuzey-2)]">
+            <button type="button" title="Hayvanları kaldır" aria-label="Hayvanları kaldır" onClick={() => setHayvan({ tavuk: 0, kus: 0, kopek: 0, inek: 0, koyun: 0 })} className="cam rounded-lg px-2 py-1.5 text-xs font-bold transition hover:bg-[var(--yuzey-2)]">
               ✕
             </button>
           )}
